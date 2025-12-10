@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Any
 from monopoly.game import GameState, ActionType
 from monopoly.spaces import SpaceType
 from monopoly.player import PlayerState
-
+from monopoly.trade import TradeOffer
 
 class Action:
     """Represents a game action that can be taken."""
@@ -38,25 +38,31 @@ def get_legal_actions(game_state: GameState, player_id: int) -> List[Action]:
 
     current_player = game_state.get_current_player()
     if current_player.player_id != player_id:
-        # Not this player's turn
+        # Not this player's turn, but check for pending trades
+        active_trade = game_state.trade_manager.get_active_trade_for_player(player_id)
+        if active_trade and active_trade.recipient_id == player_id and not active_trade.is_complete():
+            # Player has a pending trade to respond to
+            return [
+                Action(ActionType.ACCEPT_TRADE, trade_id=active_trade.trade_id),
+                Action(ActionType.REJECT_TRADE, trade_id=active_trade.trade_id),
+            ]
         return []
 
     player = game_state.players[player_id]
     actions: List[Action] = []
 
-    # Handle auction state
-    if game_state.active_auction is not None:
-        auction = game_state.active_auction
-        if player_id in auction.active_bidders:
-            # Can bid any amount higher than current bid
-            actions.append(Action(ActionType.BID))
-            actions.append(Action(ActionType.PASS_AUCTION))
-            return actions
-        # If player has already passed but auction is still active,
-        # they must wait for auction to complete
-        if not auction.is_complete:
-            # No actions available - wait for other players
-            return actions
+    # Check for active trade involving current player
+    active_trade = game_state.trade_manager.get_active_trade_for_player(player_id)
+    if active_trade:
+        if active_trade.proposer_id == player_id:
+            # Can cancel own proposal
+            actions.append(Action(ActionType.CANCEL_TRADE, trade_id=active_trade.trade_id))
+        elif active_trade.recipient_id == player_id:
+            # Can accept or reject
+            actions.append(Action(ActionType.ACCEPT_TRADE, trade_id=active_trade.trade_id))
+            actions.append(Action(ActionType.REJECT_TRADE, trade_id=active_trade.trade_id))
+        # Trade must be resolved before other actions
+        return actions
         # Auction completed, fallthrough to normal actions
 
     # Handle jail
@@ -129,8 +135,11 @@ def get_legal_actions(game_state: GameState, player_id: int) -> List[Action]:
             return actions
 
     # Can always end turn (after dice roll)
-    if not game_state.pending_dice_roll:
-        actions.append(Action(ActionType.END_TURN))
+    if not game_state.pending_dice_roll and not game_state.active_auction:
+        # Can propose trade to any other active player
+        for other_id in game_state.players.keys():
+            if other_id != player_id and not game_state.players[other_id].is_bankrupt:
+                actions.append(Action(ActionType.PROPOSE_TRADE, recipient_id=other_id))
 
     # If player has insufficient funds for something, allow bankruptcy
     if player.cash < 0:
@@ -191,6 +200,60 @@ def apply_action(game_state: GameState, action: Action) -> bool:
         True if action was successful, False otherwise
     """
     current_player = game_state.get_current_player()
+
+    # Trading actions
+    if action.action_type == ActionType.PROPOSE_TRADE:
+        recipient_id = action.params.get("recipient_id")
+        proposer_offer = action.params.get("proposer_offer", TradeOffer())
+        recipient_offer = action.params.get("recipient_offer", TradeOffer())
+
+        # Validate offers
+        valid, error = game_state.validate_trade_offer(current_player.player_id, proposer_offer)
+        if not valid:
+            return False
+
+        # Create trade
+        trade = game_state.trade_manager.create_trade(
+            current_player.player_id,
+            recipient_id,
+            proposer_offer,
+            recipient_offer,
+        )
+        return True
+
+    elif action.action_type == ActionType.ACCEPT_TRADE:
+        trade_id = action.params.get("trade_id")
+        trade = game_state.trade_manager.get_trade(trade_id)
+
+        if not trade or trade.recipient_id != current_player.player_id:
+            return False
+
+        trade.accept()
+        success = game_state.execute_trade(trade)
+        game_state.trade_manager.complete_trade(trade_id)
+        return success
+
+    elif action.action_type == ActionType.REJECT_TRADE:
+        trade_id = action.params.get("trade_id")
+        trade = game_state.trade_manager.get_trade(trade_id)
+
+        if not trade or trade.recipient_id != current_player.player_id:
+            return False
+
+        trade.reject()
+        game_state.trade_manager.complete_trade(trade_id)
+        return True
+
+    elif action.action_type == ActionType.CANCEL_TRADE:
+        trade_id = action.params.get("trade_id")
+        trade = game_state.trade_manager.get_trade(trade_id)
+
+        if not trade or trade.proposer_id != current_player.player_id:
+            return False
+
+        trade.cancel()
+        game_state.trade_manager.complete_trade(trade_id)
+        return True
 
     if action.action_type == ActionType.ROLL_DICE:
         if current_player.in_jail:
