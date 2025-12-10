@@ -149,10 +149,12 @@ class TaxSpace(Space):
     """A tax space (Income Tax or Luxury Tax)."""
 
     amount: int
+    has_choice: bool = False
 
-    def __init__(self, name: str, position: int, amount: int):
+    def __init__(self, name: str, position: int, amount: int, has_choice: bool = False):
         super().__init__(name, position, SpaceType.TAX)
         self.amount = amount
+        self.has_choice = has_choice
 
 
 @dataclass

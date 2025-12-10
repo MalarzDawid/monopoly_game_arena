@@ -41,7 +41,6 @@ def get_legal_actions(game_state: GameState, player_id: int) -> List[Action]:
         # Not this player's turn, but check for pending trades
         active_trade = game_state.trade_manager.get_active_trade_for_player(player_id)
         if active_trade and active_trade.recipient_id == player_id and not active_trade.is_complete():
-            # Player has a pending trade to respond to
             return [
                 Action(ActionType.ACCEPT_TRADE, trade_id=active_trade.trade_id),
                 Action(ActionType.REJECT_TRADE, trade_id=active_trade.trade_id),
@@ -105,6 +104,14 @@ def get_legal_actions(game_state: GameState, player_id: int) -> List[Action]:
             actions.append(Action(ActionType.DECLARE_BANKRUPTCY))
 
             return actions
+
+    # Handle pending income tax choice
+    if game_state.pending_income_tax_choice:
+        actions.append(Action(ActionType.PAY_INCOME_TAX_FLAT))
+        actions.append(Action(ActionType.PAY_INCOME_TAX_PERCENT))
+        # Can also do property management to raise funds if needed
+        actions.extend(_get_property_management_actions(game_state, player_id))
+        return actions
 
     # Normal turn flow
     if game_state.pending_dice_roll:
@@ -254,6 +261,17 @@ def apply_action(game_state: GameState, action: Action) -> bool:
         trade.cancel()
         game_state.trade_manager.complete_trade(trade_id)
         return True
+    elif action.action_type == ActionType.PAY_INCOME_TAX_FLAT:
+        success = game_state.pay_income_tax_choice(current_player.player_id, pay_flat=True)
+        if success:
+            game_state.pending_dice_roll = False  # Can now end turn
+        return success
+
+    elif action.action_type == ActionType.PAY_INCOME_TAX_PERCENT:
+        success = game_state.pay_income_tax_choice(current_player.player_id, pay_flat=False)
+        if success:
+            game_state.pending_dice_roll = False  # Can now end turn
+        return success
 
     if action.action_type == ActionType.ROLL_DICE:
         if current_player.in_jail:
@@ -461,7 +479,13 @@ def _resolve_landing(game_state: GameState, player_id: int, position: int) -> No
 
     # Tax
     elif space.space_type == SpaceType.TAX:
-        game_state.pay_tax(player_id, space.amount)
+        if space.has_choice:
+            # Income Tax - player must choose
+            game_state.pending_income_tax_choice = True
+            # Don't auto-pay, let player choose via action
+        else:
+            # Luxury Tax or other - auto-pay
+            game_state.pay_tax(player_id, space.amount)
 
     # Chance
     elif space.space_type == SpaceType.CHANCE:

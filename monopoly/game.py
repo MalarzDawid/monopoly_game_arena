@@ -42,7 +42,8 @@ class ActionType(Enum):
     ACCEPT_TRADE = "accept_trade"
     REJECT_TRADE = "reject_trade"
     CANCEL_TRADE = "cancel_trade"
-
+    PAY_INCOME_TAX_FLAT = "pay_income_tax_flat"
+    PAY_INCOME_TAX_PERCENT = "pay_income_tax_percent"
 
 class GameState:
     """
@@ -84,6 +85,7 @@ class GameState:
         self.active_auction: Optional[Auction] = None
         self.pending_rent_payment: Optional[Tuple[int, int, int]] = None  # (payer_id, owner_id, amount)
         self.pending_tax_payment: Optional[Tuple[int, int]] = None  # (payer_id, amount)
+        self.pending_income_tax_choice: bool = False
         self.game_over = False
         self.winner: Optional[int] = None
 
@@ -521,7 +523,48 @@ class GameState:
         self.event_log.log(
             EventType.TAX_PAYMENT,
             player_id=player_id,
-            details={"amount": amount, "new_balance": player.cash},
+            amount=amount,
+            new_balance=player.cash,
+        )
+
+        return True
+
+    def pay_income_tax_choice(self, player_id: int, pay_flat: bool) -> bool:  # <-- DODAJ TĘ CAŁĄ METODĘ
+        """
+        Player pays income tax with their choice.
+
+        Args:
+            player_id: Player making payment
+            pay_flat: If True, pay flat $200. If False, pay 10% of net worth.
+
+        Returns:
+            True if successful, False if insufficient funds
+        """
+        player = self.players[player_id]
+
+        if pay_flat:
+            amount = 200
+        else:
+            # Calculate 10% of net worth
+            net_worth = self._calculate_net_worth(player_id)
+            amount = int(net_worth * 0.10)
+
+        if player.cash < amount:
+            # Player needs to raise funds or declare bankruptcy
+            self.pending_tax_payment = (player_id, amount)
+            return False
+
+        player.cash -= amount
+        self.pending_tax_payment = None
+        self.pending_income_tax_choice = False  # Clear the flag
+
+        self.event_log.log(
+            EventType.TAX_PAYMENT,
+            player_id=player_id,
+            amount=amount,
+            tax_type="income_tax",
+            choice="flat_200" if pay_flat else "percent_10",
+            new_balance=player.cash,
         )
 
         return True
@@ -1511,6 +1554,46 @@ def execute_trade(self, trade: 'Trade') -> bool:
             "proposer_mortgage_fee": proposer_mortgage_fee,
             "recipient_mortgage_fee": recipient_mortgage_fee,
         },
+    )
+
+    return True
+
+def pay_income_tax_choice(self, player_id: int, pay_flat: bool) -> bool:
+    """
+    Player pays income tax with their choice.
+
+    Args:
+        player_id: Player making payment
+        pay_flat: If True, pay flat $200. If False, pay 10% of net worth.
+
+    Returns:
+        True if successful, False if insufficient funds
+    """
+    player = self.players[player_id]
+
+    if pay_flat:
+        amount = 200
+    else:
+        # Calculate 10% of net worth
+        net_worth = self._calculate_net_worth(player_id)
+        amount = int(net_worth * 0.10)
+
+    if player.cash < amount:
+        # Player needs to raise funds or declare bankruptcy
+        self.pending_tax_payment = (player_id, amount)
+        return False
+
+    player.cash -= amount
+    self.pending_tax_payment = None
+    self.pending_income_tax_choice = False  # <-- Clear the flag
+
+    self.event_log.log(
+        EventType.TAX_PAYMENT,
+        player_id=player_id,
+        amount=amount,
+        tax_type="income_tax",
+        choice="flat_200" if pay_flat else "percent_10",
+        new_balance=player.cash,
     )
 
     return True

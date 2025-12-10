@@ -78,6 +78,18 @@ class RandomAgent:
                         return a
 
         return action
+        # Handle income tax choice randomly
+        tax_choices = [a for a in legal_actions if a.action_type in [
+            ActionType.PAY_INCOME_TAX_FLAT,
+            ActionType.PAY_INCOME_TAX_PERCENT
+        ]]
+        if tax_choices:
+            # 70% choose flat, 30% choose percent (flat is usually better early game)
+            if self.rng.random() < 0.7:
+                flat = next((a for a in tax_choices if a.action_type == ActionType.PAY_INCOME_TAX_FLAT), None)
+                if flat:
+                    return flat
+            return self.rng.choice(tax_choices)
 
 
 class GreedyAgent:
@@ -111,6 +123,7 @@ class GreedyAgent:
         # Priority order
         priority = [
             ActionType.ROLL_DICE,
+            ActionType.PAY_INCOME_TAX_FLAT,
             ActionType.BUY_PROPERTY,
             ActionType.BUILD_HOTEL,
             ActionType.BUILD_HOUSE,
