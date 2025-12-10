@@ -19,7 +19,7 @@ from monopoly.spaces import (
 from monopoly.cards import Card, CardType, create_chance_deck, create_community_chest_deck, Deck
 from monopoly.money import Bank, EventLog, EventType
 from monopoly.auction import Auction
-
+from monopoly.trade import TradeManager, TradeOffer, Trade
 
 class ActionType(Enum):
     """Types of actions a player can take."""
@@ -38,7 +38,12 @@ class ActionType(Enum):
     USE_JAIL_CARD = "use_jail_card"
     END_TURN = "end_turn"
     DECLARE_BANKRUPTCY = "declare_bankruptcy"
-
+    PROPOSE_TRADE = "propose_trade"
+    ACCEPT_TRADE = "accept_trade"
+    REJECT_TRADE = "reject_trade"
+    CANCEL_TRADE = "cancel_trade"
+    PAY_INCOME_TAX_FLAT = "pay_income_tax_flat"
+    PAY_INCOME_TAX_PERCENT = "pay_income_tax_percent"
 
 class GameState:
     """
@@ -72,18 +77,23 @@ class GameState:
         self.chance_deck = create_chance_deck(self.rng)
         self.community_chest_deck = create_community_chest_deck(self.rng)
 
+        self.trade_manager = TradeManager(self.event_log)
+
         # Game state
         self.current_player_index = 0
         self.turn_number = 0
         self.active_auction: Optional[Auction] = None
         self.pending_rent_payment: Optional[Tuple[int, int, int]] = None  # (payer_id, owner_id, amount)
         self.pending_tax_payment: Optional[Tuple[int, int]] = None  # (payer_id, amount)
+        self.pending_income_tax_choice: bool = False
         self.game_over = False
         self.winner: Optional[int] = None
 
         # Dice state
         self.last_dice_roll: Optional[Tuple[int, int]] = None
         self.pending_dice_roll = True
+
+        self.next_rent_multiplier: Optional[float] = None
 
         self.event_log.log(
             EventType.GAME_START,
@@ -93,6 +103,7 @@ class GameState:
                 "seed": config.seed,
             },
         )
+
 
     @property
     def chance_cards(self):
@@ -425,9 +436,11 @@ class GameState:
         owner_id = ownership.owner_id
         owner = self.players[owner_id]
 
+        rent = 0
+
         if isinstance(space, PropertySpace):
             has_monopoly = self._has_monopoly(owner_id, space.color_group)
-            return space.get_rent(ownership.houses, has_monopoly)
+            rent = space.get_rent(ownership.houses, has_monopoly)
 
         elif isinstance(space, RailroadSpace):
             railroads_owned = sum(
@@ -435,19 +448,30 @@ class GameState:
                 for pos in self.board.get_all_railroads()
                 if self.property_ownership[pos].owner_id == owner_id
             )
-            return space.get_rent(railroads_owned)
+            rent = space.get_rent(railroads_owned)
+
+            # Apply special multiplier if set (from "nearest railroad" card)
+            if self.next_rent_multiplier is not None:
+                rent = int(rent * self.next_rent_multiplier)
 
         elif isinstance(space, UtilitySpace):
             if dice_roll is None:
                 dice_roll = sum(self.last_dice_roll) if self.last_dice_roll else 0
-            utilities_owned = sum(
-                1
-                for pos in self.board.get_all_utilities()
-                if self.property_ownership[pos].owner_id == owner_id
-            )
-            return space.get_rent(dice_roll, utilities_owned)
 
-        return 0
+            # Check for special multiplier (from "nearest utility" card)
+            if self.next_rent_multiplier is not None:
+                # Special case: multiply dice by the specified value (e.g., 10)
+                rent = int(dice_roll * self.next_rent_multiplier)
+            else:
+                # Normal utility rent
+                utilities_owned = sum(
+                    1
+                    for pos in self.board.get_all_utilities()
+                    if self.property_ownership[pos].owner_id == owner_id
+                )
+                rent = space.get_rent(dice_roll, utilities_owned)
+
+        return rent
 
     def pay_rent(self, payer_id: int, owner_id: int, amount: int) -> bool:
         """
@@ -465,6 +489,8 @@ class GameState:
         payer.cash -= amount
         owner.cash += amount
         self.pending_rent_payment = None  # Clear any pending payment
+
+        self.next_rent_multiplier = None
 
         self.event_log.log(
             EventType.RENT_PAYMENT,
@@ -497,7 +523,48 @@ class GameState:
         self.event_log.log(
             EventType.TAX_PAYMENT,
             player_id=player_id,
-            details={"amount": amount, "new_balance": player.cash},
+            amount=amount,
+            new_balance=player.cash,
+        )
+
+        return True
+
+    def pay_income_tax_choice(self, player_id: int, pay_flat: bool) -> bool:  # <-- DODAJ TĘ CAŁĄ METODĘ
+        """
+        Player pays income tax with their choice.
+
+        Args:
+            player_id: Player making payment
+            pay_flat: If True, pay flat $200. If False, pay 10% of net worth.
+
+        Returns:
+            True if successful, False if insufficient funds
+        """
+        player = self.players[player_id]
+
+        if pay_flat:
+            amount = 200
+        else:
+            # Calculate 10% of net worth
+            net_worth = self._calculate_net_worth(player_id)
+            amount = int(net_worth * 0.10)
+
+        if player.cash < amount:
+            # Player needs to raise funds or declare bankruptcy
+            self.pending_tax_payment = (player_id, amount)
+            return False
+
+        player.cash -= amount
+        self.pending_tax_payment = None
+        self.pending_income_tax_choice = False  # Clear the flag
+
+        self.event_log.log(
+            EventType.TAX_PAYMENT,
+            player_id=player_id,
+            amount=amount,
+            tax_type="income_tax",
+            choice="flat_200" if pay_flat else "percent_10",
+            new_balance=player.cash,
         )
 
         return True
@@ -919,11 +986,22 @@ class GameState:
         elif card.card_type == CardType.MOVE_SPACES:
             self.move_player(player_id, card.value, card.collect_go)
 
+
         elif card.card_type == CardType.MOVE_TO_NEAREST:
+
             if card.target_type == "railroad":
+
                 target = self.board.find_nearest_railroad(player.position)
+
             else:  # utility
+
                 target = self.board.find_nearest_utility(player.position)
+
+            # Set special rent multiplier if specified
+
+            if card.special_rent_multiplier is not None:
+                self.next_rent_multiplier = card.special_rent_multiplier
+
             self.move_player_to(player_id, target, card.collect_go)
 
         elif card.card_type == CardType.COLLECT:
@@ -1144,7 +1222,168 @@ class GameState:
 
         return worth
 
+    # === TRADING METHODS === (dodaj to przed def create_game)
 
+    def can_trade_property(self, player_id: int, property_position: int) -> bool:
+        """
+        Check if a property can be traded.
+
+        Rules:
+        - Player must own it
+        - Cannot have buildings on it
+        - Cannot trade if ANY property in color group has buildings
+        """
+        ownership = self.property_ownership.get(property_position)
+        if not ownership or ownership.owner_id != player_id:
+            return False
+
+        # Cannot trade property with buildings
+        if ownership.houses > 0:
+            return False
+
+        # Check if it's a property space (has color group)
+        space = self.board.get_property_space(property_position)
+        if space:
+            # Cannot trade if any property in group has buildings
+            group_positions = self.board.get_color_group(space.color_group)
+            for pos in group_positions:
+                if self.property_ownership[pos].houses > 0:
+                    return False
+
+        return True
+
+    def validate_trade_offer(self, player_id: int, offer: TradeOffer) -> tuple[bool, str]:
+        """
+        Validate that a player can offer the specified items.
+
+        Returns:
+            (valid, error_message) tuple
+        """
+        player = self.players[player_id]
+
+        # Check cash
+        if offer.cash > player.cash:
+            return False, f"Insufficient cash: has ${player.cash}, offering ${offer.cash}"
+
+        # Check jail cards
+        if offer.jail_cards > player.get_out_of_jail_cards:
+            return False, f"Insufficient jail cards: has {player.get_out_of_jail_cards}, offering {offer.jail_cards}"
+
+        # Check properties
+        for pos in offer.properties:
+            if pos not in player.properties:
+                return False, f"Player doesn't own property at position {pos}"
+
+            if not self.can_trade_property(player_id, pos):
+                space = self.board.get_space(pos)
+                return False, f"Cannot trade {space.name}: has buildings or group has buildings"
+
+        return True, ""
+
+    def execute_trade(self, trade: Trade) -> bool:
+        """
+        Execute an accepted trade, transferring all items atomically.
+
+        Returns:
+            True if successful, False if validation failed
+        """
+        if not trade.is_accepted:
+            return False
+
+        proposer = self.players[trade.proposer_id]
+        recipient = self.players[trade.recipient_id]
+
+        # Final validation (state might have changed)
+        valid, error = self.validate_trade_offer(trade.proposer_id, trade.proposer_offer)
+        if not valid:
+            self.event_log.log(
+                EventType.TRADE_EXECUTED,
+                player_id=None,
+                trade_id=trade.trade_id,
+                success=False,
+                error=f"Proposer validation failed: {error}",
+            )
+            return False
+
+        valid, error = self.validate_trade_offer(trade.recipient_id, trade.recipient_offer)
+        if not valid:
+            self.event_log.log(
+                EventType.TRADE_EXECUTED,
+                player_id=None,
+                trade_id=trade.trade_id,
+                success=False,
+                error=f"Recipient validation failed: {error}",
+            )
+            return False
+
+        # Calculate mortgage transfer fees
+        proposer_mortgage_fee = 0
+        recipient_mortgage_fee = 0
+
+        # Transfer from proposer to recipient
+        proposer.cash -= trade.proposer_offer.cash
+        recipient.cash += trade.proposer_offer.cash
+
+        for pos in trade.proposer_offer.properties:
+            proposer.properties.remove(pos)
+            recipient.properties.add(pos)
+            ownership = self.property_ownership[pos]
+            ownership.owner_id = trade.recipient_id
+
+            # Recipient pays 10% fee for mortgaged properties
+            if ownership.is_mortgaged:
+                space = self.board.get_space(pos)
+                if hasattr(space, 'mortgage_value'):
+                    fee = int(space.mortgage_value * 0.10)
+                    recipient_mortgage_fee += fee
+
+        proposer.get_out_of_jail_cards -= trade.proposer_offer.jail_cards
+        recipient.get_out_of_jail_cards += trade.proposer_offer.jail_cards
+
+        # Transfer from recipient to proposer
+        recipient.cash -= trade.recipient_offer.cash
+        proposer.cash += trade.recipient_offer.cash
+
+        for pos in trade.recipient_offer.properties:
+            recipient.properties.remove(pos)
+            proposer.properties.add(pos)
+            ownership = self.property_ownership[pos]
+            ownership.owner_id = trade.proposer_id
+
+            # Proposer pays 10% fee for mortgaged properties
+            if ownership.is_mortgaged:
+                space = self.board.get_space(pos)
+                if hasattr(space, 'mortgage_value'):
+                    fee = int(space.mortgage_value * 0.10)
+                    proposer_mortgage_fee += fee
+
+        recipient.get_out_of_jail_cards -= trade.recipient_offer.jail_cards
+        proposer.get_out_of_jail_cards += trade.recipient_offer.jail_cards
+
+        # Apply mortgage fees
+        proposer.cash -= proposer_mortgage_fee
+        recipient.cash -= recipient_mortgage_fee
+
+        self.event_log.log(
+            EventType.TRADE_EXECUTED,
+            player_id=None,
+            trade_id=trade.trade_id,
+            success=True,
+            proposer=trade.proposer_id,
+            recipient=trade.recipient_id,
+            proposer_gave=str(trade.proposer_offer),
+            recipient_gave=str(trade.recipient_offer),
+            proposer_mortgage_fee=proposer_mortgage_fee,
+            recipient_mortgage_fee=recipient_mortgage_fee,
+        )
+
+        return True
+
+
+# Funkcja create_game powinna być tutaj (bez zmian)
+def create_game(config: GameConfig, players: List[Player]) -> GameState:
+    """Create a new game with the specified configuration and players."""
+    # ... existing code ...
 def create_game(config: GameConfig, players: List[Player]) -> GameState:
     """
     Create a new game with the specified configuration and players.
@@ -1160,3 +1399,201 @@ def create_game(config: GameConfig, players: List[Player]) -> GameState:
         raise ValueError("Game requires at least 1 player")
 
     return GameState(config, players)
+
+def can_trade_property(self, player_id: int, property_position: int) -> bool:
+    """
+    Check if a property can be traded.
+
+    Rules:
+    - Player must own it
+    - Cannot have buildings on it
+    - Cannot trade if ANY property in color group has buildings
+    """
+    ownership = self.property_ownership.get(property_position)
+    if not ownership or ownership.owner_id != player_id:
+        return False
+
+    # Cannot trade property with buildings
+    if ownership.houses > 0:
+        return False
+
+    # Check if it's a property space (has color group)
+    space = self.board.get_property_space(property_position)
+    if space:
+        # Cannot trade if any property in group has buildings
+        group_positions = self.board.get_color_group(space.color_group)
+        for pos in group_positions:
+            if self.property_ownership[pos].houses > 0:
+                return False
+
+    return True
+
+def validate_trade_offer(self, player_id: int, offer: 'TradeOffer') -> tuple[bool, str]:
+    """
+    Validate that a player can offer the specified items.
+
+    Returns:
+        (valid, error_message) tuple
+    """
+    player = self.players[player_id]
+
+    # Check cash
+    if offer.cash > player.cash:
+        return False, f"Insufficient cash: has ${player.cash}, offering ${offer.cash}"
+
+    # Check jail cards
+    if offer.jail_cards > player.get_out_of_jail_cards:
+        return False, f"Insufficient jail cards: has {player.get_out_of_jail_cards}, offering {offer.jail_cards}"
+
+    # Check properties
+    for pos in offer.properties:
+        if pos not in player.properties:
+            return False, f"Player doesn't own property at position {pos}"
+
+        if not self.can_trade_property(player_id, pos):
+            space = self.board.get_space(pos)
+            return False, f"Cannot trade {space.name}: has buildings or group has buildings"
+
+    return True, ""
+
+def execute_trade(self, trade: 'Trade') -> bool:
+    """
+    Execute an accepted trade, transferring all items atomically.
+
+    Returns:
+        True if successful, False if validation failed
+    """
+    if not trade.is_accepted:
+        return False
+
+    proposer = self.players[trade.proposer_id]
+    recipient = self.players[trade.recipient_id]
+
+    # Final validation (state might have changed)
+    valid, error = self.validate_trade_offer(trade.proposer_id, trade.proposer_offer)
+    if not valid:
+        self.event_log.log(
+            EventType.TRADE_EXECUTED,
+            details={
+                "trade_id": trade.trade_id,
+                "success": False,
+                "error": f"Proposer validation failed: {error}",
+            },
+        )
+        return False
+
+    valid, error = self.validate_trade_offer(trade.recipient_id, trade.recipient_offer)
+    if not valid:
+        self.event_log.log(
+            EventType.TRADE_EXECUTED,
+            details={
+                "trade_id": trade.trade_id,
+                "success": False,
+                "error": f"Recipient validation failed: {error}",
+            },
+        )
+        return False
+
+    # Calculate mortgage transfer fees
+    proposer_mortgage_fee = 0
+    recipient_mortgage_fee = 0
+
+    # Transfer from proposer to recipient
+    proposer.cash -= trade.proposer_offer.cash
+    recipient.cash += trade.proposer_offer.cash
+
+    for pos in trade.proposer_offer.properties:
+        proposer.properties.remove(pos)
+        recipient.properties.add(pos)
+        ownership = self.property_ownership[pos]
+        ownership.owner_id = trade.recipient_id
+
+        # Recipient pays 10% fee for mortgaged properties
+        if ownership.is_mortgaged:
+            space = self.board.get_space(pos)
+            if hasattr(space, 'mortgage_value'):
+                fee = int(space.mortgage_value * 0.10)
+                recipient_mortgage_fee += fee
+
+    proposer.get_out_of_jail_cards -= trade.proposer_offer.jail_cards
+    recipient.get_out_of_jail_cards += trade.proposer_offer.jail_cards
+
+    # Transfer from recipient to proposer
+    recipient.cash -= trade.recipient_offer.cash
+    proposer.cash += trade.recipient_offer.cash
+
+    for pos in trade.recipient_offer.properties:
+        recipient.properties.remove(pos)
+        proposer.properties.add(pos)
+        ownership = self.property_ownership[pos]
+        ownership.owner_id = trade.proposer_id
+
+        # Proposer pays 10% fee for mortgaged properties
+        if ownership.is_mortgaged:
+            space = self.board.get_space(pos)
+            if hasattr(space, 'mortgage_value'):
+                fee = int(space.mortgage_value * 0.10)
+                proposer_mortgage_fee += fee
+
+    recipient.get_out_of_jail_cards -= trade.recipient_offer.jail_cards
+    proposer.get_out_of_jail_cards += trade.recipient_offer.jail_cards
+
+    # Apply mortgage fees
+    proposer.cash -= proposer_mortgage_fee
+    recipient.cash -= recipient_mortgage_fee
+
+    self.event_log.log(
+        EventType.TRADE_EXECUTED,
+        details={
+            "trade_id": trade.trade_id,
+            "success": True,
+            "proposer": trade.proposer_id,
+            "recipient": trade.recipient_id,
+            "proposer_gave": str(trade.proposer_offer),
+            "recipient_gave": str(trade.recipient_offer),
+            "proposer_mortgage_fee": proposer_mortgage_fee,
+            "recipient_mortgage_fee": recipient_mortgage_fee,
+        },
+    )
+
+    return True
+
+def pay_income_tax_choice(self, player_id: int, pay_flat: bool) -> bool:
+    """
+    Player pays income tax with their choice.
+
+    Args:
+        player_id: Player making payment
+        pay_flat: If True, pay flat $200. If False, pay 10% of net worth.
+
+    Returns:
+        True if successful, False if insufficient funds
+    """
+    player = self.players[player_id]
+
+    if pay_flat:
+        amount = 200
+    else:
+        # Calculate 10% of net worth
+        net_worth = self._calculate_net_worth(player_id)
+        amount = int(net_worth * 0.10)
+
+    if player.cash < amount:
+        # Player needs to raise funds or declare bankruptcy
+        self.pending_tax_payment = (player_id, amount)
+        return False
+
+    player.cash -= amount
+    self.pending_tax_payment = None
+    self.pending_income_tax_choice = False  # <-- Clear the flag
+
+    self.event_log.log(
+        EventType.TAX_PAYMENT,
+        player_id=player_id,
+        amount=amount,
+        tax_type="income_tax",
+        choice="flat_200" if pay_flat else "percent_10",
+        new_balance=player.cash,
+    )
+
+    return True

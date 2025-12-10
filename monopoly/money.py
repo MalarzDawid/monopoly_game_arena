@@ -43,6 +43,11 @@ class EventType(Enum):
     BANKRUPTCY = "bankruptcy"
     GAME_END = "game_end"
 
+    TRADE_PROPOSED = "trade_proposed"
+    TRADE_ACCEPTED = "trade_accepted"
+    TRADE_REJECTED = "trade_rejected"
+    TRADE_CANCELLED = "trade_cancelled"
+    TRADE_EXECUTED = "trade_executed"
 
 @dataclass
 class GameEvent:

@@ -31,6 +31,24 @@ class RandomAgent:
         Choose a random legal action with basic priorities to avoid infinite loops.
         Prioritize ROLL_DICE and END_TURN to keep the game moving.
         """
+        # Handle trade responses randomly
+        trade_actions = [a for a in legal_actions if a.action_type in [
+            ActionType.ACCEPT_TRADE,
+            ActionType.REJECT_TRADE,
+            ActionType.CANCEL_TRADE
+        ]]
+        if trade_actions:
+            # 30% chance to accept trades, 70% reject/cancel
+            if any(a.action_type == ActionType.ACCEPT_TRADE for a in trade_actions):
+                if self.rng.random() < 0.3:
+                    return next(a for a in trade_actions if a.action_type == ActionType.ACCEPT_TRADE)
+                else:
+                    reject_or_cancel = [a for a in trade_actions if
+                                        a.action_type in [ActionType.REJECT_TRADE, ActionType.CANCEL_TRADE]]
+                    if reject_or_cancel:
+                        return self.rng.choice(reject_or_cancel)
+            return self.rng.choice(trade_actions)
+
         # Strongly prefer ROLL_DICE to keep game moving
         for a in legal_actions:
             if a.action_type == ActionType.ROLL_DICE and self.rng.random() < 0.8:
@@ -60,6 +78,18 @@ class RandomAgent:
                         return a
 
         return action
+        # Handle income tax choice randomly
+        tax_choices = [a for a in legal_actions if a.action_type in [
+            ActionType.PAY_INCOME_TAX_FLAT,
+            ActionType.PAY_INCOME_TAX_PERCENT
+        ]]
+        if tax_choices:
+            # 70% choose flat, 30% choose percent (flat is usually better early game)
+            if self.rng.random() < 0.7:
+                flat = next((a for a in tax_choices if a.action_type == ActionType.PAY_INCOME_TAX_FLAT), None)
+                if flat:
+                    return flat
+            return self.rng.choice(tax_choices)
 
 
 class GreedyAgent:
@@ -73,19 +103,38 @@ class GreedyAgent:
 
     def choose_action(self, game, legal_actions: List[Action]) -> Action:
         """Choose action with simple greedy strategy."""
+
+        # Handle trade responses first
+        for action in legal_actions:
+            if action.action_type == ActionType.ACCEPT_TRADE:
+                trade_id = action.params.get("trade_id")
+                trade = game.trade_manager.get_trade(trade_id)
+                if trade and self._evaluate_trade(game, trade):
+                    return action
+                # Otherwise look for reject action
+                for a in legal_actions:
+                    if a.action_type == ActionType.REJECT_TRADE:
+                        return a
+
+            if action.action_type == ActionType.REJECT_TRADE:
+                # Already handled above, but return if no accept found
+                continue
+
         # Priority order
         priority = [
             ActionType.ROLL_DICE,
+            ActionType.PAY_INCOME_TAX_FLAT,
             ActionType.BUY_PROPERTY,
             ActionType.BUILD_HOTEL,
             ActionType.BUILD_HOUSE,
             ActionType.UNMORTGAGE_PROPERTY,
             ActionType.PAY_JAIL_FINE,
             ActionType.USE_JAIL_CARD,
-            ActionType.BID,  # Will need smart bidding in real implementation
+            ActionType.BID,
             ActionType.END_TURN,
             ActionType.DECLINE_PURCHASE,
             ActionType.PASS_AUCTION,
+            ActionType.CANCEL_TRADE,  # Cancel our own trades if stuck
         ]
 
         for action_type in priority:
@@ -103,6 +152,33 @@ class GreedyAgent:
                     return action
 
         return legal_actions[0] if legal_actions else None
+
+    def _evaluate_trade(self, game, trade) -> bool:
+        """
+        Simple trade evaluation for recipient.
+
+        Strategy: Accept if we're getting more properties than we're giving,
+        or if the cash difference is favorable.
+        """
+        if trade.recipient_id != self.player_id:
+            return False
+
+        # What we're getting from proposer
+        getting_props = len(trade.proposer_offer.properties)
+        getting_cash = trade.proposer_offer.cash
+        getting_jail_cards = trade.proposer_offer.jail_cards
+
+        # What we're giving to proposer
+        giving_props = len(trade.recipient_offer.properties)
+        giving_cash = trade.recipient_offer.cash
+        giving_jail_cards = trade.recipient_offer.jail_cards
+
+        # Simple heuristic: value properties at $200 each, jail cards at $50
+        getting_value = getting_props * 200 + getting_cash + getting_jail_cards * 50
+        giving_value = giving_props * 200 + giving_cash + giving_jail_cards * 50
+
+        # Accept if we're getting more value (with 10% margin)
+        return getting_value >= giving_value * 1.1
 
 
 def print_game_state(game):

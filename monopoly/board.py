@@ -34,7 +34,7 @@ class Board:
             PropertySpace("Mediterranean Avenue", 1, 60, "brown", 2, 10, 30, 90, 160, 250, 50, 30),
             CommunityChestSpace(2),
             PropertySpace("Baltic Avenue", 3, 60, "brown", 4, 20, 60, 180, 320, 450, 50, 30),
-            TaxSpace("Income Tax", 4, 200),
+            TaxSpace("Income Tax", 4, 200, has_choice=True),
             RailroadSpace("Reading Railroad", 5),
             PropertySpace("Oriental Avenue", 6, 100, "light_blue", 6, 30, 90, 270, 400, 550, 50, 50),
             ChanceSpace(7),
