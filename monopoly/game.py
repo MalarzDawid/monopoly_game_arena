@@ -91,6 +91,8 @@ class GameState:
         self.last_dice_roll: Optional[Tuple[int, int]] = None
         self.pending_dice_roll = True
 
+        self.next_rent_multiplier: Optional[float] = None
+
         self.event_log.log(
             EventType.GAME_START,
             details={
@@ -432,9 +434,11 @@ class GameState:
         owner_id = ownership.owner_id
         owner = self.players[owner_id]
 
+        rent = 0
+
         if isinstance(space, PropertySpace):
             has_monopoly = self._has_monopoly(owner_id, space.color_group)
-            return space.get_rent(ownership.houses, has_monopoly)
+            rent = space.get_rent(ownership.houses, has_monopoly)
 
         elif isinstance(space, RailroadSpace):
             railroads_owned = sum(
@@ -442,19 +446,30 @@ class GameState:
                 for pos in self.board.get_all_railroads()
                 if self.property_ownership[pos].owner_id == owner_id
             )
-            return space.get_rent(railroads_owned)
+            rent = space.get_rent(railroads_owned)
+
+            # Apply special multiplier if set (from "nearest railroad" card)
+            if self.next_rent_multiplier is not None:
+                rent = int(rent * self.next_rent_multiplier)
 
         elif isinstance(space, UtilitySpace):
             if dice_roll is None:
                 dice_roll = sum(self.last_dice_roll) if self.last_dice_roll else 0
-            utilities_owned = sum(
-                1
-                for pos in self.board.get_all_utilities()
-                if self.property_ownership[pos].owner_id == owner_id
-            )
-            return space.get_rent(dice_roll, utilities_owned)
 
-        return 0
+            # Check for special multiplier (from "nearest utility" card)
+            if self.next_rent_multiplier is not None:
+                # Special case: multiply dice by the specified value (e.g., 10)
+                rent = int(dice_roll * self.next_rent_multiplier)
+            else:
+                # Normal utility rent
+                utilities_owned = sum(
+                    1
+                    for pos in self.board.get_all_utilities()
+                    if self.property_ownership[pos].owner_id == owner_id
+                )
+                rent = space.get_rent(dice_roll, utilities_owned)
+
+        return rent
 
     def pay_rent(self, payer_id: int, owner_id: int, amount: int) -> bool:
         """
@@ -472,6 +487,8 @@ class GameState:
         payer.cash -= amount
         owner.cash += amount
         self.pending_rent_payment = None  # Clear any pending payment
+
+        self.next_rent_multiplier = None
 
         self.event_log.log(
             EventType.RENT_PAYMENT,
@@ -926,11 +943,22 @@ class GameState:
         elif card.card_type == CardType.MOVE_SPACES:
             self.move_player(player_id, card.value, card.collect_go)
 
+
         elif card.card_type == CardType.MOVE_TO_NEAREST:
+
             if card.target_type == "railroad":
+
                 target = self.board.find_nearest_railroad(player.position)
+
             else:  # utility
+
                 target = self.board.find_nearest_utility(player.position)
+
+            # Set special rent multiplier if specified
+
+            if card.special_rent_multiplier is not None:
+                self.next_rent_multiplier = card.special_rent_multiplier
+
             self.move_player_to(player_id, target, card.collect_go)
 
         elif card.card_type == CardType.COLLECT:

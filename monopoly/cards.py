@@ -35,6 +35,7 @@ class Card:
     target_position: Optional[int] = None
     target_type: Optional[str] = None  # "railroad" or "utility" for MOVE_TO_NEAREST
     collect_go: bool = True  # Whether to collect GO when passing it
+    special_rent_multiplier: Optional[float] = None
     # Aliases for backwards compatibility with tests
     text: Optional[str] = None
     action_type: Optional[CardType] = None
@@ -109,18 +110,21 @@ def create_chance_deck(rng: random.Random) -> Deck:
             "If owned, pay owner 10 times dice roll.",
             CardType.MOVE_TO_NEAREST,
             target_type="utility",
+            special_rent_multiplier=10.0,  # <-- DODAJ TO
         ),
         Card(
             "Advance token to nearest Railroad. If unowned, you may buy it. "
             "If owned, pay owner twice the rental.",
             CardType.MOVE_TO_NEAREST,
             target_type="railroad",
+            special_rent_multiplier=2.0,  # <-- DODAJ TO
         ),
         Card(
             "Advance token to nearest Railroad. If unowned, you may buy it. "
             "If owned, pay owner twice the rental.",
             CardType.MOVE_TO_NEAREST,
             target_type="railroad",
+            special_rent_multiplier=2.0,  # <-- DODAJ TO
         ),
         Card("Bank pays you dividend of $50", CardType.COLLECT, value=50),
         Card("Get Out of Jail Free", CardType.GET_OUT_OF_JAIL),
