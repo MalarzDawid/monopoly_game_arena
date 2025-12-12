@@ -197,6 +197,12 @@ class GreedyAgent:
                 # Otherwise buy
                 return buy_action
 
+        # Handle trade responses - automatically reject all incoming trades
+        # (simple agents don't actively trade)
+        for action in legal_actions:
+            if action.action_type == ActionType.REJECT_TRADE:
+                return action
+
         # Priority order for other actions
         priority = [
             ActionType.ROLL_DICE,
@@ -210,6 +216,8 @@ class GreedyAgent:
             ActionType.END_TURN,
             ActionType.DECLINE_PURCHASE,
             ActionType.PASS_AUCTION,
+            # Note: PROPOSE_TRADE, ACCEPT_TRADE, CANCEL_TRADE are intentionally not in priority
+            # Simple agents don't actively trade
         ]
 
         for action_type in priority:
@@ -623,6 +631,62 @@ def simulate_game(
                                 owner_id, owner.name,
                                 space.name, amount,
                                 payer.cash, owner.cash
+                            )
+
+                    elif event_type == 'trade_proposed':
+                        details = event.details.get('details', event.details)
+                        trade_id = details.get('trade_id')
+                        proposer_id = details.get('proposer_id')
+                        recipient_id = details.get('recipient_id')
+                        proposer_offers = details.get('proposer_offers', [])
+                        proposer_wants = details.get('proposer_wants', [])
+
+                        if proposer_id is not None and recipient_id is not None:
+                            proposer = game.players[proposer_id]
+                            recipient = game.players[recipient_id]
+                            logger.log_trade_proposed(
+                                trade_id, proposer_id, proposer.name,
+                                recipient_id, recipient.name,
+                                proposer_offers, proposer_wants
+                            )
+
+                    elif event_type == 'trade_accepted':
+                        details = event.details.get('details', event.details)
+                        trade_id = details.get('trade_id')
+                        if event.player_id is not None:
+                            player = game.players[event.player_id]
+                            logger.log_trade_accepted(trade_id, event.player_id, player.name)
+
+                    elif event_type == 'trade_rejected':
+                        details = event.details.get('details', event.details)
+                        trade_id = details.get('trade_id')
+                        if event.player_id is not None:
+                            player = game.players[event.player_id]
+                            logger.log_trade_rejected(trade_id, event.player_id, player.name)
+
+                    elif event_type == 'trade_cancelled':
+                        details = event.details.get('details', event.details)
+                        trade_id = details.get('trade_id')
+                        if event.player_id is not None:
+                            player = game.players[event.player_id]
+                            logger.log_trade_cancelled(trade_id, event.player_id, player.name)
+
+                    elif event_type == 'trade_executed':
+                        details = event.details.get('details', event.details)
+                        trade_id = details.get('trade_id')
+                        proposer_id = details.get('proposer_id')
+                        recipient_id = details.get('recipient_id')
+                        proposer_offers = details.get('proposer_offers', [])
+                        proposer_wants = details.get('proposer_wants', [])
+
+                        if proposer_id is not None and recipient_id is not None:
+                            proposer = game.players[proposer_id]
+                            recipient = game.players[recipient_id]
+                            logger.log_trade_executed(
+                                trade_id, proposer_id, proposer.name,
+                                recipient_id, recipient.name,
+                                proposer_offers, proposer_wants,
+                                proposer.cash, recipient.cash
                             )
 
                 last_event_log_size = current_event_log_size

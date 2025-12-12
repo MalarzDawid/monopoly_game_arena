@@ -231,6 +231,66 @@ class GameLogger:
             cost=cost
         )
 
+    def log_trade_proposed(self, trade_id: int, proposer_id: int, proposer_name: str,
+                          recipient_id: int, recipient_name: str,
+                          proposer_offers: list, proposer_wants: list):
+        """Log trade proposal."""
+        self.log_event(
+            "trade_proposed",
+            trade_id=trade_id,
+            proposer_id=proposer_id,
+            proposer_name=proposer_name,
+            recipient_id=recipient_id,
+            recipient_name=recipient_name,
+            proposer_offers=proposer_offers,
+            proposer_wants=proposer_wants
+        )
+
+    def log_trade_accepted(self, trade_id: int, player_id: int, player_name: str):
+        """Log trade acceptance."""
+        self.log_event(
+            "trade_accepted",
+            trade_id=trade_id,
+            player_id=player_id,
+            player_name=player_name
+        )
+
+    def log_trade_rejected(self, trade_id: int, player_id: int, player_name: str):
+        """Log trade rejection."""
+        self.log_event(
+            "trade_rejected",
+            trade_id=trade_id,
+            player_id=player_id,
+            player_name=player_name
+        )
+
+    def log_trade_cancelled(self, trade_id: int, player_id: int, player_name: str):
+        """Log trade cancellation."""
+        self.log_event(
+            "trade_cancelled",
+            trade_id=trade_id,
+            player_id=player_id,
+            player_name=player_name
+        )
+
+    def log_trade_executed(self, trade_id: int, proposer_id: int, proposer_name: str,
+                          recipient_id: int, recipient_name: str,
+                          proposer_offers: list, proposer_wants: list,
+                          proposer_cash_after: int, recipient_cash_after: int):
+        """Log completed trade."""
+        self.log_event(
+            "trade_executed",
+            trade_id=trade_id,
+            proposer_id=proposer_id,
+            proposer_name=proposer_name,
+            recipient_id=recipient_id,
+            recipient_name=recipient_name,
+            proposer_offers=proposer_offers,
+            proposer_wants=proposer_wants,
+            proposer_cash_after=proposer_cash_after,
+            recipient_cash_after=recipient_cash_after
+        )
+
     def log_bankruptcy(self, player_id: int, player_name: str, creditor_id: Optional[int], creditor_name: Optional[str]):
         """Log player bankruptcy."""
         self.log_event(

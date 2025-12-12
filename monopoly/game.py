@@ -19,6 +19,7 @@ from monopoly.spaces import (
 from monopoly.cards import Card, CardType, create_chance_deck, create_community_chest_deck, Deck
 from monopoly.money import Bank, EventLog, EventType
 from monopoly.auction import Auction
+from monopoly.trading import TradeManager, TradeOffer, TradeItem, TradeItemType
 
 
 class ActionType(Enum):
@@ -36,6 +37,10 @@ class ActionType(Enum):
     UNMORTGAGE_PROPERTY = "unmortgage_property"
     PAY_JAIL_FINE = "pay_jail_fine"
     USE_JAIL_CARD = "use_jail_card"
+    PROPOSE_TRADE = "propose_trade"
+    ACCEPT_TRADE = "accept_trade"
+    REJECT_TRADE = "reject_trade"
+    CANCEL_TRADE = "cancel_trade"
     END_TURN = "end_turn"
     DECLARE_BANKRUPTCY = "declare_bankruptcy"
 
@@ -78,6 +83,7 @@ class GameState:
         self.active_auction: Optional[Auction] = None
         self.pending_rent_payment: Optional[Tuple[int, int, int]] = None  # (payer_id, owner_id, amount)
         self.pending_tax_payment: Optional[Tuple[int, int]] = None  # (payer_id, amount)
+        self.trade_manager = TradeManager()
         self.game_over = False
         self.winner: Optional[int] = None
 
@@ -405,6 +411,153 @@ class GameState:
         # Clear active auction
         if self.active_auction == auction:
             self.active_auction = None
+
+    def validate_trade(self, trade: TradeOffer) -> Tuple[bool, str]:
+        """
+        Validate if a trade can be executed.
+
+        Returns:
+            (is_valid, error_message) tuple
+        """
+        proposer = self.players.get(trade.proposer_id)
+        recipient = self.players.get(trade.recipient_id)
+
+        if not proposer or not recipient:
+            return False, "Invalid player IDs"
+
+        if proposer.is_bankrupt or recipient.is_bankrupt:
+            return False, "Cannot trade with bankrupt player"
+
+        # Validate proposer's offerings
+        proposer_cash = trade.get_proposer_cash()
+        if proposer_cash > proposer.cash:
+            return False, f"Proposer doesn't have ${proposer_cash} (has ${proposer.cash})"
+
+        proposer_jail_cards = trade.get_proposer_jail_cards()
+        if proposer_jail_cards > proposer.get_out_of_jail_cards:
+            return False, f"Proposer doesn't have {proposer_jail_cards} jail cards"
+
+        for prop_pos in trade.get_proposer_properties():
+            if prop_pos not in proposer.properties:
+                space = self.board.get_space(prop_pos)
+                return False, f"Proposer doesn't own {space.name}"
+
+            ownership = self.property_ownership[prop_pos]
+            if ownership.houses > 0:
+                space = self.board.get_space(prop_pos)
+                return False, f"Cannot trade {space.name} - must sell buildings first"
+
+        # Validate recipient's offerings
+        recipient_cash = trade.get_recipient_cash()
+        if recipient_cash > recipient.cash:
+            return False, f"Recipient doesn't have ${recipient_cash} (has ${recipient.cash})"
+
+        recipient_jail_cards = trade.get_recipient_jail_cards()
+        if recipient_jail_cards > recipient.get_out_of_jail_cards:
+            return False, f"Recipient doesn't have {recipient_jail_cards} jail cards"
+
+        for prop_pos in trade.get_recipient_properties():
+            if prop_pos not in recipient.properties:
+                space = self.board.get_space(prop_pos)
+                return False, f"Recipient doesn't own {space.name}"
+
+            ownership = self.property_ownership[prop_pos]
+            if ownership.houses > 0:
+                space = self.board.get_space(prop_pos)
+                return False, f"Cannot trade {space.name} - must sell buildings first"
+
+        return True, ""
+
+    def execute_trade(self, trade: TradeOffer) -> bool:
+        """
+        Execute a validated trade.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Validate first
+        is_valid, error_msg = self.validate_trade(trade)
+        if not is_valid:
+            self.event_log.log(
+                EventType.TRADE_FAILED,
+                details={"trade_id": trade.trade_id, "reason": error_msg}
+            )
+            return False
+
+        proposer = self.players[trade.proposer_id]
+        recipient = self.players[trade.recipient_id]
+
+        # Log trade start
+        self.event_log.log(
+            EventType.TRADE_EXECUTED,
+            details={
+                "trade_id": trade.trade_id,
+                "proposer_id": trade.proposer_id,
+                "recipient_id": trade.recipient_id,
+                "proposer_offers": [str(item) for item in trade.proposer_offers],
+                "proposer_wants": [str(item) for item in trade.proposer_wants]
+            }
+        )
+
+        # Calculate mortgage transfer fees (10% of mortgage value for mortgaged properties)
+        proposer_mortgage_fees = 0
+        for prop_pos in trade.get_proposer_properties():
+            ownership = self.property_ownership[prop_pos]
+            if ownership.is_mortgaged:
+                space = self.board.get_space(prop_pos)
+                if hasattr(space, 'mortgage_value'):
+                    proposer_mortgage_fees += int(space.mortgage_value * 0.10)
+
+        recipient_mortgage_fees = 0
+        for prop_pos in trade.get_recipient_properties():
+            ownership = self.property_ownership[prop_pos]
+            if ownership.is_mortgaged:
+                space = self.board.get_space(prop_pos)
+                if hasattr(space, 'mortgage_value'):
+                    recipient_mortgage_fees += int(space.mortgage_value * 0.10)
+
+        # Transfer cash
+        proposer.cash -= trade.get_proposer_cash()
+        recipient.cash += trade.get_proposer_cash()
+        recipient.cash -= trade.get_recipient_cash()
+        proposer.cash += trade.get_recipient_cash()
+
+        # Transfer jail cards
+        proposer.get_out_of_jail_cards -= trade.get_proposer_jail_cards()
+        recipient.get_out_of_jail_cards += trade.get_proposer_jail_cards()
+        recipient.get_out_of_jail_cards -= trade.get_recipient_jail_cards()
+        proposer.get_out_of_jail_cards += trade.get_recipient_jail_cards()
+
+        # Transfer properties from proposer to recipient
+        for prop_pos in trade.get_proposer_properties():
+            proposer.properties.remove(prop_pos)
+            recipient.properties.add(prop_pos)
+            self.property_ownership[prop_pos].owner_id = trade.recipient_id
+
+        # Transfer properties from recipient to proposer
+        for prop_pos in trade.get_recipient_properties():
+            recipient.properties.remove(prop_pos)
+            proposer.properties.add(prop_pos)
+            self.property_ownership[prop_pos].owner_id = trade.proposer_id
+
+        # Apply mortgage transfer fees
+        if proposer_mortgage_fees > 0:
+            recipient.cash -= proposer_mortgage_fees
+            self.event_log.log(
+                EventType.PAYMENT,
+                player_id=trade.recipient_id,
+                details={"amount": proposer_mortgage_fees, "reason": "mortgage_transfer_fee"}
+            )
+
+        if recipient_mortgage_fees > 0:
+            proposer.cash -= recipient_mortgage_fees
+            self.event_log.log(
+                EventType.PAYMENT,
+                player_id=trade.proposer_id,
+                details={"amount": recipient_mortgage_fees, "reason": "mortgage_transfer_fee"}
+            )
+
+        return True
 
     def calculate_rent(self, property_position: int, dice_roll: Optional[int] = None) -> int:
         """

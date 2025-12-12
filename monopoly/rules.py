@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Any
 from monopoly.game import GameState, ActionType
 from monopoly.spaces import SpaceType
 from monopoly.player import PlayerState
+from monopoly.money import EventType
 
 
 class Action:
@@ -136,6 +137,9 @@ def get_legal_actions(game_state: GameState, player_id: int) -> List[Action]:
     if not game_state.pending_dice_roll:
         actions.append(Action(ActionType.END_TURN))
 
+    # Trade actions - can propose trades or respond to pending trades
+    actions.extend(_get_trade_actions(game_state, player_id))
+
     # If player has insufficient funds for something, allow bankruptcy
     if player.cash < 0:
         actions.append(Action(ActionType.DECLARE_BANKRUPTCY))
@@ -177,6 +181,36 @@ def _get_property_management_actions(game_state: GameState, player_id: int) -> L
 
             if player.cash >= cost:
                 actions.append(Action(ActionType.UNMORTGAGE_PROPERTY, position=position))
+
+    return actions
+
+
+def _get_trade_actions(game_state: GameState, player_id: int) -> List[Action]:
+    """Get available trade actions for a player."""
+    actions: List[Action] = []
+    player = game_state.players[player_id]
+
+    if player.is_bankrupt:
+        return actions
+
+    # Check for pending trade offers where this player is the recipient
+    active_trades = game_state.trade_manager.get_active_trades_for_player(player_id)
+    for trade in active_trades:
+        if trade.recipient_id == player_id and trade.status == "pending":
+            # Can accept or reject trades offered to us
+            actions.append(Action(ActionType.ACCEPT_TRADE, trade_id=trade.trade_id))
+            actions.append(Action(ActionType.REJECT_TRADE, trade_id=trade.trade_id))
+        elif trade.proposer_id == player_id and trade.status == "pending":
+            # Can cancel our own pending trades
+            actions.append(Action(ActionType.CANCEL_TRADE, trade_id=trade.trade_id))
+
+    # Can always propose a new trade to any other non-bankrupt player
+    # Note: The actual trade details (what to offer/want) would be determined by the agent
+    # We just signal that PROPOSE_TRADE is available
+    for other_id, other_player in game_state.players.items():
+        if other_id != player_id and not other_player.is_bankrupt:
+            # Add a PROPOSE_TRADE action (agent will fill in the details)
+            actions.append(Action(ActionType.PROPOSE_TRADE, recipient_id=other_id))
 
     return actions
 
@@ -312,6 +346,114 @@ def apply_action(game_state: GameState, action: Action, player_id: Optional[int]
 
     elif action.action_type == ActionType.END_TURN:
         game_state.end_turn()
+        return True
+
+    elif action.action_type == ActionType.PROPOSE_TRADE:
+        # Propose a trade to another player
+        recipient_id = action.params.get("recipient_id")
+        proposer_offers = action.params.get("proposer_offers", [])
+        proposer_wants = action.params.get("proposer_wants", [])
+
+        if recipient_id is None:
+            return False
+
+        trade = game_state.trade_manager.create_trade(
+            proposer_id=current_player.player_id,
+            recipient_id=recipient_id,
+            proposer_offers=proposer_offers,
+            proposer_wants=proposer_wants,
+            current_turn=game_state.turn_number
+        )
+
+        # Validate trade
+        is_valid, error_msg = game_state.validate_trade(trade)
+        if not is_valid:
+            # Cancel invalid trade immediately
+            game_state.trade_manager.cancel_trade(trade.trade_id)
+            game_state.event_log.log(
+                EventType.TRADE_FAILED,
+                player_id=current_player.player_id,
+                details={"trade_id": trade.trade_id, "reason": error_msg}
+            )
+            return False
+
+        game_state.event_log.log(
+            EventType.TRADE_PROPOSED,
+            player_id=current_player.player_id,
+            details={
+                "trade_id": trade.trade_id,
+                "proposer_id": trade.proposer_id,
+                "recipient_id": trade.recipient_id,
+                "proposer_offers": [str(item) for item in trade.proposer_offers],
+                "proposer_wants": [str(item) for item in trade.proposer_wants]
+            }
+        )
+        return True
+
+    elif action.action_type == ActionType.ACCEPT_TRADE:
+        trade_id = action.params.get("trade_id")
+        if trade_id is None:
+            return False
+
+        trade = game_state.trade_manager.get_trade(trade_id)
+        if not trade or trade.status != "pending":
+            return False
+
+        # Only recipient can accept
+        if trade.recipient_id != current_player.player_id:
+            return False
+
+        # Execute trade
+        success = game_state.execute_trade(trade)
+        if success:
+            game_state.trade_manager.accept_trade(trade_id)
+            game_state.event_log.log(
+                EventType.TRADE_ACCEPTED,
+                player_id=current_player.player_id,
+                details={"trade_id": trade_id}
+            )
+        return success
+
+    elif action.action_type == ActionType.REJECT_TRADE:
+        trade_id = action.params.get("trade_id")
+        if trade_id is None:
+            return False
+
+        trade = game_state.trade_manager.get_trade(trade_id)
+        if not trade or trade.status != "pending":
+            return False
+
+        # Only recipient can reject
+        if trade.recipient_id != current_player.player_id:
+            return False
+
+        game_state.trade_manager.reject_trade(trade_id)
+        game_state.event_log.log(
+            EventType.TRADE_REJECTED,
+            player_id=current_player.player_id,
+            details={"trade_id": trade_id}
+        )
+        return True
+
+    elif action.action_type == ActionType.CANCEL_TRADE:
+        trade_id = action.params.get("trade_id")
+        if trade_id is None:
+            return False
+
+        trade = game_state.trade_manager.get_trade(trade_id)
+        if not trade or trade.status != "pending":
+            return False
+
+        # Only proposer can cancel
+        if trade.proposer_id != current_player.player_id:
+            return False
+
+        game_state.trade_manager.cancel_trade(trade_id)
+        game_state.event_log.log(
+            EventType.TRADE_CANCELLED,
+            player_id=current_player.player_id,
+            details={"trade_id": trade_id}
+        )
         return True
 
     elif action.action_type == ActionType.DECLARE_BANKRUPTCY:
