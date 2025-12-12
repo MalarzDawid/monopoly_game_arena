@@ -78,8 +78,20 @@ class ReportGenerator:
         """Format a single event into readable text."""
         event_type = event.get('event_type')
 
-        # Get cash_after if exists (some events have this field)
-        cash_after = event.get('cash_after')
+        # Get cash_after based on event type
+        cash_after = None
+
+        if event_type == 'rent_payment':
+            cash_after = event.get('payer_cash_after')
+        elif event_type == 'purchase':
+            cash_after = event.get('cash_after')
+        elif event_type == 'auction_end':
+            # Only show winner's cash
+            cash_after = event.get('winner_cash_after')
+        elif event_type == 'card_effect':
+            cash_after = event.get('cash_after')
+        else:
+            cash_after = event.get('cash_after')
 
         # Helper function to add cash info
         def add_cash_info(text: str) -> str:
@@ -127,9 +139,12 @@ class ReportGenerator:
             return f"🃏 Card ({deck}): \"{card}\""
 
         elif event_type == 'card_effect':
-            card = event.get('card', '?')
             effect_type = event.get('effect_type', '?')
-            return f"   ↳ Card effect: {effect_type}"
+            amount = event.get('amount')
+            if amount is not None and amount != 0:
+                return add_cash_info(f"   ↳ Card effect: {effect_type} (${amount:,})")
+            else:
+                return add_cash_info(f"   ↳ Card effect: {effect_type}")
 
         elif event_type == 'jail_enter':
             return f"🚔 SENT TO JAIL!"
@@ -181,7 +196,13 @@ class ReportGenerator:
         elif event_type == 'auction_bid':
             bid_amount = event.get('bid_amount', 0)
             bid_number = event.get('bid_number', 0)
-            return f"   ↳ Bid #{bid_number}: ${bid_amount:,}"
+            player_name = event.get('player_name', '?')
+            return f"   ↳ {player_name} bids ${bid_amount:,} (round {bid_number})"
+
+        elif event_type == 'auction_pass':
+            player_name = event.get('player_name', '?')
+            remaining_count = event.get('remaining_count', 0)
+            return f"   ⏸️  {player_name} passes ({remaining_count} bidders remaining)"
 
         elif event_type == 'auction_end':
             winner_name = event.get('winner_name')
@@ -226,21 +247,21 @@ class ReportGenerator:
             turn_start = next((e for e in turn_events if e.get('event_type') == 'turn_start'), None)
             current_player_id = turn_start.get('player_id') if turn_start else None
 
-            # Find initial player state (from player_state_detailed)
+            # Find initial player state (from player_state_detailed FOR THIS PLAYER)
             initial_state = next((e for e in turn_events
-                                 if e.get('event_type') == 'player_state_detailed'
-                                 and e.get('player_id') == current_player_id), None)
+                                  if e.get('event_type') == 'player_state_detailed'
+                                  and e.get('player_id') == current_player_id), None)
 
             current_cash = initial_state.get('cash', 0) if initial_state else 0
 
             # Turn header
-            lines.append(f"\n{'='*70}")
+            lines.append(f"\n{'=' * 70}")
             lines.append(f"🔹 TURN {turn}: {player_name} | 💰 Starting: ${current_cash:,}")
-            lines.append(f"{'='*70}")
+            lines.append(f"{'=' * 70}")
 
             # Skip turn_start and player_state_detailed - focus on actions
             action_events = [e for e in turn_events
-                           if e.get('event_type') not in ['turn_start', 'player_state_detailed']]
+                             if e.get('event_type') not in ['turn_start', 'player_state_detailed']]
 
             if not action_events:
                 lines.append("   ⏭️  (no actions - player passed turn)")
@@ -248,18 +269,30 @@ class ReportGenerator:
                 for event in action_events:
                     event_type = event.get('event_type')
 
-                    # Update cash based on event
-                    if 'cash_after' in event:
+                    # Update cash based on event type
+                    if event_type == 'rent_payment':
+                        # Only update if this player is the payer
+                        if event.get('payer_id') == current_player_id:
+                            current_cash = event.get('payer_cash_after', current_cash)
+                    elif event_type == 'purchase':
+                        current_cash = event.get('cash_after', current_cash)
+                    elif event_type == 'auction_end':
+                        # Only update if this player won
+                        if event.get('winner_id') == current_player_id:
+                            current_cash = event.get('winner_cash_after', current_cash)
+                    elif event_type == 'card_effect':
+                        current_cash = event.get('cash_after', current_cash)
+                    elif 'cash_after' in event:
                         current_cash = event.get('cash_after', current_cash)
 
                     formatted = self._format_event(event)
 
-                    # Add cash only if event has cash_after
-                    if 'cash_after' in event:
-                        lines.append(f"   {formatted}")
-                    else:
-                        # For events without cash_after, show last known cash
+                    # Show cash only for events that don't already include it
+                    if event_type in ['dice_roll', 'move', 'land', 'decline_purchase', 'auction_start', 'auction_bid',
+                                      'auction_pass', 'card_draw', 'jail_enter']:
                         lines.append(f"   {formatted} | 💵 Cash: ${current_cash:,}")
+                    else:
+                        lines.append(f"   {formatted}")
 
         lines.append("\n" + "=" * 70)
         return "\n".join(lines)
