@@ -36,15 +36,11 @@ def get_legal_actions(game_state: GameState, player_id: int) -> List[Action]:
     if game_state.game_over:
         return []
 
-    current_player = game_state.get_current_player()
-    if current_player.player_id != player_id:
-        # Not this player's turn
-        return []
-
     player = game_state.players[player_id]
     actions: List[Action] = []
 
-    # Handle auction state
+    # Handle auction state - IMPORTANT: Check this BEFORE current player check
+    # because during auctions, any active bidder can take actions
     if game_state.active_auction is not None:
         auction = game_state.active_auction
         if player_id in auction.active_bidders:
@@ -58,6 +54,12 @@ def get_legal_actions(game_state: GameState, player_id: int) -> List[Action]:
             # No actions available - wait for other players
             return actions
         # Auction completed, fallthrough to normal actions
+
+    # For non-auction actions, must be current player's turn
+    current_player = game_state.get_current_player()
+    if current_player.player_id != player_id:
+        # Not this player's turn
+        return []
 
     # Handle jail
     if player.in_jail:
@@ -100,21 +102,16 @@ def get_legal_actions(game_state: GameState, player_id: int) -> List[Action]:
 
             return actions
 
-    # Normal turn flow
-    if game_state.pending_dice_roll:
-        actions.append(Action(ActionType.ROLL_DICE))
-        # Can also do property management before rolling
-        actions.extend(_get_property_management_actions(game_state, player_id))
-        return actions
-
-    # After rolling, check current position
+    # After rolling, check current position for purchase opportunities
+    # This must be checked BEFORE allowing another dice roll (even with doubles)
     space = game_state.board.get_space(player.position)
 
-    # If landed on purchasable property
+    # If landed on purchasable property that's unowned
     if space.space_type in (SpaceType.PROPERTY, SpaceType.RAILROAD, SpaceType.UTILITY):
         ownership = game_state.property_ownership.get(player.position)
         if ownership and not ownership.is_owned():
             # Can buy or decline (which triggers auction)
+            # MUST decide before rolling again, even with doubles
             if space.space_type == SpaceType.PROPERTY:
                 price = space.price
             elif space.space_type == SpaceType.RAILROAD:
@@ -127,6 +124,13 @@ def get_legal_actions(game_state: GameState, player_id: int) -> List[Action]:
 
             actions.append(Action(ActionType.DECLINE_PURCHASE, position=player.position))
             return actions
+
+    # Normal turn flow - can roll if pending
+    if game_state.pending_dice_roll:
+        actions.append(Action(ActionType.ROLL_DICE))
+        # Can also do property management before rolling
+        actions.extend(_get_property_management_actions(game_state, player_id))
+        return actions
 
     # Can always end turn (after dice roll)
     if not game_state.pending_dice_roll:
@@ -177,7 +181,7 @@ def _get_property_management_actions(game_state: GameState, player_id: int) -> L
     return actions
 
 
-def apply_action(game_state: GameState, action: Action) -> bool:
+def apply_action(game_state: GameState, action: Action, player_id: Optional[int] = None) -> bool:
     """
     Apply an action to the game state.
 
@@ -186,11 +190,14 @@ def apply_action(game_state: GameState, action: Action) -> bool:
     Args:
         game_state: Current game state
         action: Action to apply
+        player_id: Player executing the action (optional, defaults to current player)
 
     Returns:
         True if action was successful, False otherwise
     """
-    current_player = game_state.get_current_player()
+    if player_id is None:
+        player_id = game_state.current_player_index
+    current_player = game_state.players[player_id]
 
     if action.action_type == ActionType.ROLL_DICE:
         if current_player.in_jail:

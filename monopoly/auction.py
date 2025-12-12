@@ -18,6 +18,7 @@ class Auction:
         property_name: str,
         eligible_player_ids: List[int],
         event_log: EventLog,
+        max_bids_per_player: int = 3,
     ):
         self.property_position = property_position
         self.property_name = property_name
@@ -27,6 +28,8 @@ class Auction:
         self.high_bidder: Optional[int] = None
         self.event_log = event_log
         self.is_complete = False
+        self.max_bids_per_player = max_bids_per_player
+        self.bid_counts: Dict[int, int] = {pid: 0 for pid in eligible_player_ids}
 
         self.event_log.log(
             EventType.AUCTION_START,
@@ -41,6 +44,7 @@ class Auction:
         """
         Place a bid for a player.
         Returns True if bid is accepted, False if invalid.
+        If bid is invalid (too low), player is automatically passed.
         """
         if self.is_complete:
             return False
@@ -49,16 +53,35 @@ class Auction:
             return False
 
         if amount <= self.current_bid:
+            # Invalid bid - automatically pass this player
+            self.pass_turn(player_id)
+            return False
+
+        # Check if player has reached max bids
+        if self.bid_counts.get(player_id, 0) >= self.max_bids_per_player:
+            # Automatically pass this player
+            self.pass_turn(player_id)
             return False
 
         self.current_bid = amount
         self.high_bidder = player_id
+        self.bid_counts[player_id] = self.bid_counts.get(player_id, 0) + 1
 
         self.event_log.log(
             EventType.AUCTION_BID,
             player_id=player_id,
-            details={"property": self.property_name, "amount": amount},
+            details={
+                "property": self.property_name,
+                "amount": amount,
+                "bid_number": self.bid_counts[player_id],
+            },
         )
+
+        # Check if this player has exhausted their bids
+        if self.bid_counts[player_id] >= self.max_bids_per_player:
+            # Remove player from active bidders - they've used all their bids
+            # They can still win if they have the high bid
+            self.pass_turn(player_id)
 
         return True
 
@@ -66,7 +89,26 @@ class Auction:
         """Player passes on bidding."""
         if player_id in self.active_bidders:
             self.active_bidders.remove(player_id)
+            self.event_log.log(
+                EventType.AUCTION_PASS,
+                player_id=player_id,
+                details={
+                    "property": self.property_name,
+                    "remaining_bidders": list(self.active_bidders),
+                },
+            )
             self._check_completion()
+        else:
+            # Player already passed - log warning
+            self.event_log.log(
+                EventType.AUCTION_PASS,
+                player_id=player_id,
+                details={
+                    "property": self.property_name,
+                    "already_passed": True,
+                    "active_bidders": list(self.active_bidders),
+                },
+            )
 
     def _check_completion(self) -> None:
         """Check if auction is complete (only one bidder remains)."""
@@ -94,3 +136,11 @@ class Auction:
     def get_winning_bid(self) -> int:
         """Get the winning bid amount."""
         return self.current_bid
+
+    def can_player_bid(self, player_id: int) -> bool:
+        """Check if a player can still place bids."""
+        if player_id not in self.active_bidders:
+            return False
+        if self.bid_counts.get(player_id, 0) >= self.max_bids_per_player:
+            return False
+        return True

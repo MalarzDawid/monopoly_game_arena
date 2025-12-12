@@ -907,11 +907,12 @@ class GameState:
             deck = self.chance_deck
         player = self.players[player_id]
 
-        self.event_log.log(
-            EventType.CARD_EFFECT,
-            player_id=player_id,
-            details={"card": card.description, "type": card.card_type.value},
-        )
+        # Prepare card effect details with cash tracking
+        card_details = {
+            "card": card.description,
+            "type": card.card_type.value,
+            "cash_before": player.cash
+        }
 
         if card.card_type == CardType.MOVE_TO:
             self.move_player_to(player_id, card.target_position, card.collect_go)
@@ -928,9 +929,11 @@ class GameState:
 
         elif card.card_type == CardType.COLLECT:
             player.cash += card.value
+            card_details["amount"] = card.value
 
         elif card.card_type == CardType.PAY:
             player.cash -= card.value
+            card_details["amount"] = -card.value
 
         elif card.card_type == CardType.PAY_PER_HOUSE:
             total = 0
@@ -941,6 +944,7 @@ class GameState:
                 else:
                     total += card.value * ownership.houses
             player.cash -= total
+            card_details["amount"] = -total
 
         elif card.card_type == CardType.PAY_PER_BUILDING:
             # Different costs for houses vs hotels
@@ -952,20 +956,27 @@ class GameState:
                 else:
                     total += card.value * ownership.houses  # Per-house cost
             player.cash -= total
+            card_details["amount"] = -total
 
         elif card.card_type == CardType.COLLECT_FROM_PLAYERS:
+            total_collected = 0
             for other_id, other_player in self.players.items():
                 if other_id != player_id and not other_player.is_bankrupt:
                     transfer = min(card.value, other_player.cash)
                     other_player.cash -= transfer
                     player.cash += transfer
+                    total_collected += transfer
+            card_details["amount"] = total_collected
 
         elif card.card_type == CardType.PAY_TO_PLAYERS:
+            total_paid = 0
             for other_id, other_player in self.players.items():
                 if other_id != player_id and not other_player.is_bankrupt:
                     transfer = min(card.value, player.cash)
                     player.cash -= transfer
                     other_player.cash += transfer
+                    total_paid += transfer
+            card_details["amount"] = -total_paid
 
         elif card.card_type == CardType.GO_TO_JAIL:
             self.send_to_jail(player_id)
@@ -973,8 +984,25 @@ class GameState:
         elif card.card_type == CardType.GET_OUT_OF_JAIL:
             player.get_out_of_jail_cards += 1
             deck.hold_card(card)
+            # Log the effect with cash info
+            card_details["cash_after"] = player.cash
+            self.event_log.log(
+                EventType.CARD_EFFECT,
+                player_id=player_id,
+                details=card_details,
+            )
             # Don't discard - card is held
             return
+
+        # Add cash_after to details
+        card_details["cash_after"] = player.cash
+
+        # Log the card effect
+        self.event_log.log(
+            EventType.CARD_EFFECT,
+            player_id=player_id,
+            details=card_details,
+        )
 
         # Return card to discard pile
         deck.discard(card)

@@ -20,6 +20,7 @@ class EventType(Enum):
     PURCHASE = "purchase"
     AUCTION_START = "auction_start"
     AUCTION_BID = "auction_bid"
+    AUCTION_PASS = "auction_pass"
     AUCTION_END = "auction_end"
 
     RENT_PAYMENT = "rent_payment"
