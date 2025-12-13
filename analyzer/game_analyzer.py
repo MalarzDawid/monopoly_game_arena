@@ -105,8 +105,8 @@ class MonopolyGameAnalyzer:
                 if owner_id is not None:
                     self.player_stats[owner_id].total_rent_received += amount
 
-            # Track jail visits
-            if event_type == 'jail_enter' and player_id is not None:
+            # Track jail visits (support multiple canonical names)
+            if event_type in ('jail_enter', 'jail_entry', 'go_to_jail') and player_id is not None:
                 self.player_stats[player_id].times_in_jail += 1
 
             # Update player state (take LAST state for each player)

@@ -146,10 +146,10 @@ class ReportGenerator:
             else:
                 return add_cash_info(f"   ↳ Card effect: {effect_type}")
 
-        elif event_type == 'jail_enter':
+        elif event_type in ('jail_enter', 'jail_entry', 'go_to_jail'):
             return f"🚔 SENT TO JAIL!"
 
-        elif event_type == 'jail_exit':
+        elif event_type in ('jail_exit', 'jail_release'):
             method = event.get('method', '?')
             return add_cash_info(f"🔓 Exit from jail (method: {method})")
 

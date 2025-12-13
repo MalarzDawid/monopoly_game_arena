@@ -100,6 +100,14 @@ class GameState:
             },
         )
 
+        # Log initial turn start for consistency in external logging
+        current = self.get_current_player()
+        self.event_log.log(
+            EventType.TURN_START,
+            player_id=current.player_id,
+            details={"turn": self.turn_number},
+        )
+
     @property
     def chance_cards(self):
         """Access to chance deck cards for testing."""
@@ -1274,6 +1282,8 @@ class GameState:
         # Check time limit
         if self.config.time_limit_turns and self.turn_number >= self.config.time_limit_turns:
             self._end_game_by_time_limit()
+            if self.game_over:
+                return
 
         self.event_log.log(
             EventType.TURN_START,
