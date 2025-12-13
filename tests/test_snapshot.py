@@ -2,7 +2,7 @@ from monopoly.config import GameConfig
 from monopoly.player import Player
 from monopoly.game import create_game
 
-from snapshot import serialize_snapshot
+from monopoly_game_arena.snapshot import serialize_snapshot
 
 
 def test_basic_snapshot_structure():
@@ -24,4 +24,3 @@ def test_basic_snapshot_structure():
     # Players contain public info only
     p0 = next(p for p in snap["players"] if p["player_id"] == 0)
     assert set(["player_id", "name", "cash", "position", "in_jail", "jail_turns", "jail_cards", "is_bankrupt", "properties"]).issubset(p0.keys())
-

@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from events.mapper import map_events
+from monopoly_game_arena.events.mapper import map_events
 
 
 class GameLogger:

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Monopoly Arena</title>
+    <link rel="stylesheet" href="/ui/styles.css?v=3" />
+  </head>
+  <body>
+    <header>
+      <h1>Monopoly Arena</h1>
+      <form id="create-form">
+        <label>Players <input type="number" id="players" min="2" max="8" value="4" /></label>
+        <label>Roles <input id="roles" value="greedy,greedy,greedy,greedy" /></label>
+        <label>Max turns <input type="number" id="max-turns" value="100" /></label>
+        <label>Speed (ms) <input type="number" id="tick-ms" value="500" min="0" max="10000" /></label>
+        <button type="submit">Create Game</button>
+        <span id="game-id"></span>
+      </form>
+      <div class="controls">
+        <button id="pause-btn" disabled>Pause</button>
+        <button id="resume-btn" disabled>Resume</button>
+        <label>Live speed <input type="range" id="speed-range" min="0" max="2000" value="500" /></label>
+      </div>
+    </header>
+
+    <main>
+      <section class="board-wrap">
+        <div id="board" class="board"></div>
+      </section>
+      <aside class="side">
+        <div class="players">
+          <h3>Players</h3>
+          <ul id="players"></ul>
+        </div>
+        <div class="status">
+          <h3>Status</h3>
+          <pre id="status"></pre>
+        </div>
+        <div class="debug">
+          <h3>Feed Filters</h3>
+          <div class="filters">
+            <label><input type="checkbox" class="flt" data-type="dice_roll" checked /> dice</label>
+            <label><input type="checkbox" class="flt" data-type="move" checked /> moves</label>
+            <label><input type="checkbox" class="flt" data-type="purchase" checked /> purchase</label>
+            <label><input type="checkbox" class="flt" data-type="rent_payment" checked /> rent</label>
+            <label><input type="checkbox" class="flt" data-type="auction" checked /> auctions</label>
+            <label><input type="checkbox" class="flt" data-type="card" checked /> cards</label>
+            <label><input type="checkbox" class="flt" data-type="other" checked /> other</label>
+          </div>
+          <input id="feed-search" placeholder="search feed..." />
+        </div>
+        <div class="inspector">
+          <h3>Turn Inspector</h3>
+          <div id="turns-meta"></div>
+          <input type="range" id="turn-slider" min="0" max="0" value="0" />
+          <pre id="turn-events"></pre>
+        </div>
+        <div class="events">
+          <h3>Events</h3>
+          <ul id="events"></ul>
+        </div>
+      </aside>
+    </main>
+
+    <script src="/ui/app.js?v=3"></script>
+  </body>
+  </html>

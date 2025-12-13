@@ -14,7 +14,7 @@ from monopoly.game import create_game, ActionType
 from monopoly.player import Player
 from monopoly.config import GameConfig
 from monopoly.rules import get_legal_actions, apply_action, Action
-from game_logger import GameLogger
+from monopoly_game_arena.game_logger import GameLogger
 
 
 class RandomAgent:

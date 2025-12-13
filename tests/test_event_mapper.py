@@ -5,7 +5,7 @@ from monopoly.player import Player
 from monopoly.rules import Action, apply_action
 from monopoly.game import create_game, ActionType
 
-from events.mapper import map_events
+from monopoly_game_arena.events.mapper import map_events
 
 
 def test_map_basic_roll_move_land_events():
@@ -63,4 +63,3 @@ def test_map_rent_and_jail_events():
     jail_ev = game.event_log.get_recent_events(1)
     mapped_jail = map_events(game.board, jail_ev)
     assert mapped_jail[0]["event_type"] == "go_to_jail"
-

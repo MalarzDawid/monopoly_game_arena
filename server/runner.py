@@ -1,0 +1,339 @@
+from __future__ import annotations
+
+import asyncio
+from typing import Any, Dict, List, Optional, Set
+
+from monopoly.rules import get_legal_actions, apply_action
+from monopoly.game import GameState
+from monopoly_game_arena.game_logger import GameLogger
+from monopoly_game_arena.events.mapper import map_events
+from monopoly_game_arena.snapshot import serialize_snapshot
+
+# Reuse simple agents from CLI to keep skeleton minimal
+from monopoly_game_arena.play_monopoly import GreedyAgent, RandomAgent, ActionType
+
+
+class GameRunner:
+    """Owns a single GameState and runs it asynchronously.
+
+    Responsibilities:
+    - Drive turns and agent decisions
+    - Flush internal engine events to JSONL via GameLogger
+    - Broadcast mapped events to subscribed WebSocket clients
+    """
+
+    def __init__(self, game_id: str, game: GameState, agent_type: str = "greedy", roles: Optional[List[str]] = None, tick_ms: Optional[int] = 500):
+        self.game_id = game_id
+        self.game = game
+        self.agent_type = agent_type
+        self.logger = GameLogger()
+        self._task: Optional[asyncio.Task] = None
+        self._stop = asyncio.Event()
+        self._clients: Set[asyncio.Queue] = set()  # each client gets a queue of outbound messages
+        self._last_engine_idx = len(self.game.event_log.events)
+        self._apply_lock = asyncio.Lock()
+        self._new_action_event = asyncio.Event()
+        self._paused = False
+        self._turn_indices: Dict[int, int] = {}
+        self._auction_rotation: Dict[int, int] = {}
+        # pacing between actions (seconds)
+        self._tick: float = max(0.0, (tick_ms or 0) / 1000.0)
+
+        # Agents list (one per player)
+        names = [self.game.players[i].name for i in sorted(self.game.players)]
+        # Determine roles per player
+        if roles is None:
+            roles = [agent_type for _ in names]
+        # Normalize length
+        if len(roles) < len(names):
+            roles = roles + [agent_type] * (len(names) - len(roles))
+        self.roles: List[str] = roles
+
+        # Prepare agents for non-human players
+        self.agents: List[Optional[object]] = [None] * len(names)
+        for i, role in enumerate(self.roles):
+            if role == "human":
+                self.agents[i] = None
+            elif role == "random":
+                self.agents[i] = RandomAgent(i, names[i])
+            else:
+                self.agents[i] = GreedyAgent(i, names[i])
+
+    async def start(self) -> None:
+        # Flush initial GAME_START and TURN_START
+        self.logger.flush_engine_events(self.game)
+        self._task = asyncio.create_task(self._run_loop())
+
+    async def stop(self) -> None:
+        self._stop.set()
+        if self._task:
+            await self._task
+
+    # Subscription management for WS
+    async def subscribe(self) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue()
+        self._clients.add(q)
+        # Send initial snapshot
+        await q.put({
+            "type": "snapshot",
+            "game_id": self.game_id,
+            "snapshot": serialize_snapshot(self.game),
+            "last_event_index": self._last_engine_idx,
+        })
+        return q
+
+    async def unsubscribe(self, q: asyncio.Queue) -> None:
+        self._clients.discard(q)
+
+    async def _broadcast(self, payload: Dict[str, Any]) -> None:
+        if not self._clients:
+            return
+        for q in list(self._clients):
+            # Best-effort; don't block if client is slow
+            try:
+                q.put_nowait(payload)
+            except asyncio.QueueFull:
+                # Drop client if it cannot keep up
+                self._clients.discard(q)
+
+    async def _run_loop(self) -> None:
+        # Main loop; conservative sleep to avoid tight CPU usage
+        while not self.game.game_over and not self._stop.is_set():
+            # Flush internal events to JSONL and broadcast them
+            await self.flush_and_broadcast()
+
+            # Honor pause flag globally
+            if self._paused:
+                await self._wait_for_external_action()
+                continue
+
+            # Auction phase handling
+            if self.game.active_auction and self.game.active_auction.active_bidders:
+                # Determine next bidder who can act
+                active = sorted([
+                    pid for pid in self.game.active_auction.active_bidders
+                    if self.game.active_auction.can_player_bid(pid)
+                ])
+                if not active:
+                    # Force pass remaining to complete auction
+                    for pid in list(self.game.active_auction.active_bidders):
+                        self.game.active_auction.pass_turn(pid)
+                    await self.flush_and_broadcast()
+                    await asyncio.sleep(self._tick)
+                    # Clean rotation when auction completes
+                    if not self.game.active_auction:
+                        self._auction_rotation.clear()
+                    continue
+
+                # Round-robin bidder selection per auction instance
+                auction_id = id(self.game.active_auction)
+                idx = self._auction_rotation.get(auction_id, 0) % len(active)
+                bidder_id = active[idx]
+                role = self.roles[bidder_id]
+                if role == "human":
+                    # Wait for external action
+                    await self._wait_for_external_action()
+                    continue
+                else:
+                    actions = get_legal_actions(self.game, bidder_id)
+                    if not actions:
+                        # If agent cannot act, pass bidder
+                        self.game.active_auction.pass_turn(bidder_id)
+                        await self.flush_and_broadcast()
+                        await asyncio.sleep(self._tick)
+                        continue
+                    agent = self.agents[bidder_id]
+                    action = agent.choose_action(self.game, actions)
+                    if action is None:
+                        self.game.active_auction.pass_turn(bidder_id)
+                        await self.flush_and_broadcast()
+                        await asyncio.sleep(self._tick)
+                        continue
+                    apply_action(self.game, action, player_id=bidder_id)
+                    # Advance rotation for next loop
+                    self._auction_rotation[auction_id] = idx + 1
+                    # If auction completed, clear rotation
+                    if not self.game.active_auction:
+                        self._auction_rotation.pop(auction_id, None)
+                    await asyncio.sleep(self._tick)
+                    continue
+
+            # Normal turn flow
+            current = self.game.get_current_player()
+            role = self.roles[current.player_id]
+            actions = get_legal_actions(self.game, current.player_id)
+            if not actions:
+                # End turn to keep game moving
+                self.game.end_turn()
+                await asyncio.sleep(self._tick)
+                continue
+
+            if role == "human":
+                # Wait for external action
+                await self._wait_for_external_action()
+                continue
+            else:
+                agent = self.agents[current.player_id]
+                action = agent.choose_action(self.game, actions)
+                if action is None:
+                    self.game.end_turn()
+                    await asyncio.sleep(self._tick)
+                    continue
+                apply_action(self.game, action)
+                await asyncio.sleep(self._tick)
+
+        # Final flush and broadcast end state
+        await self.flush_and_broadcast()
+
+    async def flush_and_broadcast(self) -> None:
+        # Broadcast mapped events generated since last flush
+        evs = self.game.event_log.events
+        if self._last_engine_idx < len(evs):
+            slice_ = evs[self._last_engine_idx:]
+            # Record turn start indices for querying per turn later
+            try:
+                from monopoly_game_arena.monopoly.money import EventType as _ET
+            except Exception:
+                _ET = None
+            for i, ev in enumerate(slice_):
+                if _ET and ev.event_type == _ET.TURN_START:
+                    # Extract turn number from details
+                    d = ev.details.get("details", ev.details)
+                    t = d.get("turn") if "turn" in d else d.get("turn_number")
+                    if isinstance(t, int):
+                        self._turn_indices.setdefault(t, self._last_engine_idx + i)
+            mapped = map_events(
+                self.game.board,
+                slice_,
+                player_positions={pid: p.position for pid, p in self.game.players.items()},
+            )
+            # Inform clients about new events chunk
+            await self._broadcast({
+                "type": "events",
+                "game_id": self.game_id,
+                "events": mapped,
+                "from_index": self._last_engine_idx,
+                "to_index": self._last_engine_idx + len(mapped) - 1,
+            })
+            self._last_engine_idx = len(evs)
+
+        # Persist to JSONL
+        self.logger.flush_engine_events(self.game)
+
+    async def _wait_for_external_action(self) -> None:
+        # Wait until an external action is applied or stop/pause toggled
+        self._new_action_event.clear()
+        try:
+            await asyncio.wait_for(self._new_action_event.wait(), timeout=0.5)
+        except asyncio.TimeoutError:
+            # Periodic wakeup to allow status/flush
+            pass
+
+    # ---- External control helpers ----
+    async def get_legal_actions(self, player_id: Optional[int] = None) -> list[dict]:
+        """Return legal actions for given player (or current)."""
+        pid = player_id if player_id is not None else self.game.get_current_player().player_id
+        acts = get_legal_actions(self.game, pid)
+        return [{"action_type": a.action_type.value, "params": dict(a.params)} for a in acts]
+
+    async def apply_action_request(self, action_type: str, params: dict | None = None, player_id: Optional[int] = None) -> tuple[bool, str]:
+        """Try to apply an action for a player. Returns (accepted, reason)."""
+        from monopoly.rules import Action  # local import to avoid cycles
+
+        async with self._apply_lock:
+            pid = player_id if player_id is not None else self.game.get_current_player().player_id
+            # Validate action type
+            try:
+                atype = ActionType(action_type)
+            except Exception:
+                return False, f"unknown action_type: {action_type}"
+
+            # Check legality
+            legal = get_legal_actions(self.game, pid)
+            if not any(a.action_type == atype for a in legal):
+                return False, "action not legal for player"
+
+            act = Action(atype, **(params or {}))
+            ok = apply_action(self.game, act)
+            await self.flush_and_broadcast()
+            self._new_action_event.set()
+            return (True, "") if ok else (False, "apply_action returned False")
+
+    # ---- Status helpers ----
+    async def status(self) -> Dict[str, Any]:
+        actors: List[int] = []
+        phase = "turn"
+        if self.game.active_auction and self.game.active_auction.active_bidders:
+            phase = "auction"
+            actors = sorted([
+                pid for pid in self.game.active_auction.active_bidders
+                if self.game.active_auction.can_player_bid(pid)
+            ])
+        else:
+            actors = [self.game.get_current_player().player_id]
+        return {
+            "game_id": self.game_id,
+            "turn_number": self.game.turn_number,
+            "current_player_id": self.game.get_current_player().player_id,
+            "phase": phase,
+            "actors": actors,
+            "roles": self.roles,
+            "game_over": self.game.game_over,
+            "paused": self._paused,
+            "tick_ms": int(self._tick * 1000),
+        }
+
+    async def set_paused(self, value: bool) -> None:
+        self._paused = value
+        if not value:
+            self._new_action_event.set()
+
+    async def set_tick_ms(self, tick_ms: int) -> None:
+        self._tick = max(0.0, (tick_ms or 0) / 1000.0)
+        # Nudge loop so speed applies immediately
+        self._new_action_event.set()
+
+    async def list_turns(self) -> List[Dict[str, int]]:
+        # Build ranges from recorded indices
+        keys = sorted(self._turn_indices.keys())
+        res: List[Dict[str, int]] = []
+        for idx, t in enumerate(keys):
+            start = self._turn_indices[t]
+            end = (self._turn_indices[keys[idx + 1]] - 1) if idx + 1 < len(keys) else (len(self.game.event_log.events) - 1)
+            res.append({"turn_number": t, "from_index": start, "to_index": end})
+        return res
+
+    async def get_turn_events(self, turn_number: int) -> List[Dict[str, Any]]:
+        if turn_number not in self._turn_indices:
+            return []
+        turns = await self.list_turns()
+        target = next((r for r in turns if r["turn_number"] == turn_number), None)
+        if not target:
+            return []
+        evs = self.game.event_log.events[target["from_index"] : target["to_index"] + 1]
+        mapped = map_events(
+            self.game.board,
+            evs,
+            player_positions={pid: p.position for pid, p in self.game.players.items()},
+        )
+        return mapped
+
+    # ---- Event cursor helpers for viewers ----
+    async def get_last_index(self) -> int:
+        return len(self.game.event_log.events) - 1
+
+    async def get_events_since(self, since_index: int) -> Dict[str, Any]:
+        evs = self.game.event_log.events
+        start = max(since_index + 1, 0)
+        if start >= len(evs):
+            return {"events": [], "from_index": start, "to_index": start - 1}
+        mapped = map_events(
+            self.game.board,
+            evs[start:],
+            player_positions={pid: p.position for pid, p in self.game.players.items()},
+        )
+        return {
+            "events": mapped,
+            "from_index": start,
+            "to_index": len(evs) - 1,
+        }
