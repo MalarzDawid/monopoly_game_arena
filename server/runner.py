@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, Dict, List, Optional, Set
+from datetime import datetime, timezone
 
 from monopoly.rules import get_legal_actions, apply_action
 from monopoly.game import GameState
-from monopoly_game_arena.game_logger import GameLogger
-from monopoly_game_arena.events.mapper import map_events
-from monopoly_game_arena.snapshot import serialize_snapshot
+from game_logger import GameLogger
+from events.mapper import map_events
+from snapshot import serialize_snapshot
+from server.database import session_scope, GameRepository
 
 # Reuse simple agents from CLI to keep skeleton minimal
-from monopoly_game_arena.play_monopoly import GreedyAgent, RandomAgent, ActionType
+from play_monopoly import GreedyAgent, RandomAgent, ActionType
 
 
 class GameRunner:
@@ -26,7 +28,7 @@ class GameRunner:
         self.game_id = game_id
         self.game = game
         self.agent_type = agent_type
-        self.logger = GameLogger()
+        self.logger = GameLogger(game_id=game_id)  # Pass game_id for DB logging
         self._task: Optional[asyncio.Task] = None
         self._stop = asyncio.Event()
         self._clients: Set[asyncio.Queue] = set()  # each client gets a queue of outbound messages
@@ -62,6 +64,18 @@ class GameRunner:
     async def start(self) -> None:
         # Flush initial GAME_START and TURN_START
         self.logger.flush_engine_events(self.game)
+        # Mark game as running in the database (best-effort)
+        try:
+            async with session_scope() as session:
+                repo = GameRepository(session)
+                await repo.update_game_status(
+                    game_id=self.game_id,
+                    status="running",
+                    started_at=datetime.now(timezone.utc),
+                )
+        except Exception:
+            # Non-fatal; continue even if DB update fails
+            pass
         self._task = asyncio.create_task(self._run_loop())
 
     async def stop(self) -> None:
@@ -184,6 +198,52 @@ class GameRunner:
 
         # Final flush and broadcast end state
         await self.flush_and_broadcast()
+
+        # Update final status and results in DB (best-effort)
+        try:
+            async with session_scope() as session:
+                repo = GameRepository(session)
+                db_game = await repo.get_game_by_id(self.game_id)
+                if db_game:
+                    # Update game status and metadata
+                    status = "finished" if self.game.game_over else "stopped"
+                    await repo.update_game_status(
+                        game_id=self.game_id,
+                        status=status,
+                        finished_at=datetime.now(timezone.utc),
+                        winner_id=self.game.winner,
+                        total_turns=self.game.turn_number,
+                    )
+
+                    # Compute placements by net worth (desc)
+                    standings = []
+                    for pid, p in self.game.players.items():
+                        try:
+                            net_worth = self.game._calculate_net_worth(pid)  # engine helper
+                        except Exception:
+                            net_worth = p.cash
+                        standings.append((pid, net_worth))
+                    standings.sort(key=lambda t: (-t[1], t[0]))
+                    placement_by_pid = {pid: idx + 1 for idx, (pid, _) in enumerate(standings)}
+
+                    # Persist player results
+                    for pid, p in self.game.players.items():
+                        try:
+                            net_worth = self.game._calculate_net_worth(pid)
+                        except Exception:
+                            net_worth = p.cash
+                        await repo.update_player_results(
+                            game_uuid=db_game.id,
+                            player_id=pid,
+                            final_cash=p.cash,
+                            final_net_worth=net_worth,
+                            is_winner=(self.game.winner == pid),
+                            is_bankrupt=p.is_bankrupt,
+                            placement=placement_by_pid.get(pid),
+                        )
+        except Exception:
+            # Non-fatal; avoid crashing shutdown
+            pass
 
     async def flush_and_broadcast(self) -> None:
         # Broadcast mapped events generated since last flush

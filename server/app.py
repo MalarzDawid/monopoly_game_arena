@@ -1,18 +1,44 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from monopoly_game_arena.server.registry import GameRegistry
-from monopoly_game_arena.snapshot import serialize_snapshot
+from .registry import GameRegistry
+from snapshot import serialize_snapshot
+from server.database import init_db, close_db, get_session, GameRepository
 
 
-app = FastAPI(title="Monopoly Arena Server", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle - startup and shutdown."""
+    # Startup
+    print("🚀 Starting Monopoly Arena Server...")
+    print("📊 Initializing database connection...")
+    await init_db()
+    print("✅ Database ready!")
+
+    yield
+
+    # Shutdown
+    print("🛑 Shutting down server...")
+    print("📊 Closing database connection...")
+    await close_db()
+    print("✅ Shutdown complete!")
+
+
+app = FastAPI(
+    title="Monopoly Arena Server",
+    version="0.2.0",
+    lifespan=lifespan
+)
 registry = GameRegistry()
 
 
@@ -202,13 +228,131 @@ async def get_turn_events(game_id: str, turn_number: int):
     return {"game_id": game_id, "turn_number": turn_number, "events": events}
 
 
+# ---- Database History Endpoints ----
+
+@app.get("/api/games")
+async def list_all_games(
+    limit: int = 100,
+    offset: int = 0,
+    status: Optional[str] = None,
+    session: AsyncSession = Depends(get_session)
+):
+    """List all games from database."""
+    repo = GameRepository(session)
+    games = await repo.list_games(limit=limit, offset=offset, status=status)
+
+    return {
+        "games": [
+            {
+                "game_id": g.game_id,
+                "status": g.status,
+                "total_turns": g.total_turns,
+                "created_at": g.created_at.isoformat() if g.created_at else None,
+                "started_at": g.started_at.isoformat() if g.started_at else None,
+                "finished_at": g.finished_at.isoformat() if g.finished_at else None,
+                "winner_id": g.winner_id,
+                "config": g.config,
+                "players": [
+                    {
+                        "player_id": p.player_id,
+                        "name": p.name,
+                        "agent_type": p.agent_type,
+                        "is_winner": p.is_winner,
+                        "final_cash": p.final_cash,
+                        "final_net_worth": p.final_net_worth,
+                    }
+                    for p in g.players
+                ]
+            }
+            for g in games
+        ],
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@app.get("/api/games/{game_id}/history")
+async def get_game_history(
+    game_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Get full game history with all events from database."""
+    repo = GameRepository(session)
+    result = await repo.get_game_with_events(game_id)
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Game not found in database")
+
+    game, events = result
+
+    return {
+        "game": {
+            "game_id": game.game_id,
+            "status": game.status,
+            "total_turns": game.total_turns,
+            "created_at": game.created_at.isoformat() if game.created_at else None,
+            "started_at": game.started_at.isoformat() if game.started_at else None,
+            "finished_at": game.finished_at.isoformat() if game.finished_at else None,
+            "winner_id": game.winner_id,
+            "config": game.config,
+            "players": [
+                {
+                    "player_id": p.player_id,
+                    "name": p.name,
+                    "agent_type": p.agent_type,
+                    "is_winner": p.is_winner,
+                    "final_cash": p.final_cash,
+                    "final_net_worth": p.final_net_worth,
+                }
+                for p in game.players
+            ]
+        },
+        "events": [
+            {
+                "sequence_number": e.sequence_number,
+                "turn_number": e.turn_number,
+                "event_type": e.event_type,
+                "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+                "payload": e.payload,
+                "actor_player_id": e.actor_player_id,
+            }
+            for e in events
+        ],
+        "total_events": len(events),
+    }
+
+
+@app.get("/api/games/{game_id}/stats")
+async def get_game_stats(
+    game_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Get game statistics from database."""
+    repo = GameRepository(session)
+    game = await repo.get_game_by_id(game_id)
+
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found in database")
+
+    stats = await repo.get_game_statistics(game.id)
+
+    return {
+        "game_id": game_id,
+        "status": game.status,
+        "total_turns": game.total_turns,
+        "statistics": stats,
+    }
+
+
 # ---- Static UI ----
 @app.get("/")
 async def root():
     return RedirectResponse(url="/ui/")
 
 
-app.mount("/ui", StaticFiles(directory="monopoly_game_arena/server/static", html=True), name="ui")
+# Get static directory path relative to this file
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/ui", StaticFiles(directory=str(STATIC_DIR), html=True), name="ui")
 
 # Disable caching for static UI to make sure latest JS/CSS is loaded
 @app.middleware("http")

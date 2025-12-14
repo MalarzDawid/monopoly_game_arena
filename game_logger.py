@@ -1,34 +1,38 @@
 """
 JSONL logger for Monopoly game events.
 
-Logs all important game events to a JSONL file for analysis and debugging.
+Logs all important game events to a JSONL file and PostgreSQL database.
 """
 
+import asyncio
 import json
 import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from monopoly_game_arena.events.mapper import map_events
+from events.mapper import map_events
 
 
 class GameLogger:
-    """Logger that writes game events to JSONL file."""
+    """Logger that writes game events to JSONL file and database."""
 
-    def __init__(self, log_file: str = None):
+    def __init__(self, log_file: str = None, game_id: str = None):
         """
         Initialize game logger.
 
         Args:
             log_file: Path to log file. If None, generates timestamped filename.
+            game_id: Game ID for database logging
         """
         if log_file is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_file = f"monopoly_game_{timestamp}.jsonl"
 
         self.log_file = log_file
+        self.game_id = game_id
         self.event_count = 0
         self._engine_last_idx = 0  # last flushed index from engine's internal EventLog
+        self._db_enabled = game_id is not None
 
         # Create/clear log file
         with open(self.log_file, 'w') as f:
@@ -49,10 +53,53 @@ class GameLogger:
             **kwargs
         }
 
+        # Write to JSONL file
         with open(self.log_file, 'a') as f:
             f.write(json.dumps(event) + '\n')
 
+        # Write to database asynchronously (non-blocking)
+        if self._db_enabled:
+            asyncio.create_task(self._log_event_to_db(event_type, event))
+
         self.event_count += 1
+
+    async def _log_event_to_db(self, event_type: str, event: Dict[str, Any]):
+        """
+        Log event to database (async).
+
+        Args:
+            event_type: Type of event
+            event: Full event data
+        """
+        try:
+            from server.database import session_scope, GameRepository
+
+            async with session_scope() as session:
+                repo = GameRepository(session)
+
+                # Get game UUID from game_id
+                game = await repo.get_game_by_id(self.game_id)
+                if not game:
+                    return
+
+                # Extract turn number from event
+                turn_number = event.get("turn_number", 0)
+
+                # Extract actor player_id if available
+                actor_player_id = event.get("player_id")
+
+                # Add event to database
+                await repo.add_event(
+                    game_uuid=game.id,
+                    sequence_number=event.get("event_id", self.event_count),
+                    turn_number=turn_number,
+                    event_type=event_type,
+                    payload=event,
+                    actor_player_id=actor_player_id,
+                )
+        except Exception as e:
+            # Don't crash game if DB logging fails
+            print(f"⚠️  Database logging failed: {e}")
 
     def flush_engine_events(self, game) -> int:
         """Flush new internal engine events to JSONL using EventMapper.

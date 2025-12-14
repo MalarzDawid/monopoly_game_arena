@@ -9,6 +9,7 @@ from monopoly.player import Player
 from monopoly.game import create_game
 
 from .runner import GameRunner
+from server.database import session_scope, GameRepository
 
 
 class GameRegistry:
@@ -36,6 +37,35 @@ class GameRegistry:
             roles = [agent] * num_players
         config = GameConfig(seed=seed, time_limit_turns=max_turns)
         game = create_game(config, players)
+
+        # Save game to database
+        async with session_scope() as session:
+            repo = GameRepository(session)
+            db_game = await repo.create_game(
+                game_id=game_id,
+                config={
+                    "seed": seed,
+                    "max_turns": max_turns,
+                    "num_players": num_players,
+                    "agent": agent,
+                    "roles": roles,
+                    "tick_ms": tick_ms,
+                },
+                metadata={
+                    "created_by": "api",
+                    "game_type": "simulation",
+                }
+            )
+
+            # Add players to database
+            for i, player in enumerate(players):
+                agent_type = roles[i] if roles else agent
+                await repo.add_player(
+                    game_uuid=db_game.id,
+                    player_id=i,
+                    name=player.name,
+                    agent_type=agent_type,
+                )
 
         runner = GameRunner(game_id=game_id, game=game, agent_type=agent, roles=roles, tick_ms=tick_ms)
         async with self._lock:
