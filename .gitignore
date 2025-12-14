@@ -214,3 +214,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Database & Docker
+*.sql
+*.db
+postgres_data/
+pgdata/
+
+# Alembic
+# Keep alembic/ directory but ignore some files
+alembic/versions/*.pyc
+alembic/__pycache__/
+
+# Game logs (optional - depends on your needs)
+# game_logs/
+# *.jsonl
