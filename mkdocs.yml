@@ -53,3 +53,14 @@ nav:
       - Auction: monopoly/auction.md
       - Trading: monopoly/trading.md
       - Rules API: monopoly/rules_api.md
+  - Server:
+      - Architecture: server/index.md
+      - REST API: server/api.md
+      - WebSocket: server/websocket.md
+      - GameRegistry: server/registry.md
+      - GameRunner: server/runner.md
+      - Database:
+          - Overview: server/database/index.md
+          - Models: server/database/models.md
+          - Repository: server/database/repository.md
+          - Config: server/database/config.md
