@@ -53,6 +53,12 @@ nav:
       - Auction: monopoly/auction.md
       - Trading: monopoly/trading.md
       - Rules API: monopoly/rules_api.md
+  - Agents:
+      - Overview: agents/index.md
+      - Base Class: agents/base.md
+      - RandomAgent: agents/random.md
+      - GreedyAgent: agents/greedy.md
+      - LLMAgent: agents/llm.md
   - Server:
       - Architecture: server/index.md
       - REST API: server/api.md
