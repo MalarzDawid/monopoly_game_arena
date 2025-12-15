@@ -15,4 +15,7 @@ dependencies = [
     "alembic>=1.13.0",
     "pydantic-settings>=2.1.0",
     "httpx>=0.28.1",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.0",
+    "mkdocstrings[python]>=0.25.0",
 ]
