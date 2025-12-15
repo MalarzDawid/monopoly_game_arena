@@ -1,0 +1,55 @@
+site_name: Monopoly Game Arena
+# site_url: https://mydomain.org/mysite
+theme:
+  palette:
+    primary: green
+  name: material
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            show_source: false
+            docstring_style: google
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+            show_if_no_docstring: true
+            group_by_category: true
+            members_order: source
+            inherited_members: true
+            filters:
+              - "!^_"
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      linenums_style: table
+      guess_lang: false
+      use_pygments: true
+      pygments_lang_class: true
+nav:
+  - Overview: index.md
+  - Quickstart: quickstart.md
+  - Monopoly:
+      - Architecture: monopoly/index.md
+      - Rules: monopoly/rules.md
+      - Config: monopoly/config.md
+      - Player: monopoly/player.md
+      - Game: monopoly/game.md
+      - Board: monopoly/board.md
+      - Spaces: monopoly/spaces.md
+      - Cards: monopoly/cards.md
+      - Money & Events: monopoly/money.md
+      - Auction: monopoly/auction.md
+      - Trading: monopoly/trading.md
+      - Rules API: monopoly/rules_api.md
