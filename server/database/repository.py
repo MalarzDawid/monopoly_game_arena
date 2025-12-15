@@ -12,11 +12,11 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import Game, GameEvent, Player
+from .models import Game, GameEvent, Player, LLMDecision
 
 logger = logging.getLogger(__name__)
 
@@ -463,3 +463,171 @@ class GameRepository:
             "latest_sequence": latest_seq,
             "events_by_type": events_by_type,
         }
+
+    # ---- LLM Decision Operations ----
+
+    async def add_llm_decision(
+        self,
+        game_uuid: uuid.UUID,
+        player_id: int,
+        turn_number: int,
+        sequence_number: int,
+        game_state: Dict[str, Any],
+        player_state: Dict[str, Any],
+        available_actions: Dict[str, Any],
+        prompt: str,
+        reasoning: str,
+        chosen_action: Dict[str, Any],
+        strategy_description: Optional[str] = None,
+        processing_time_ms: Optional[int] = None,
+        model_version: Optional[str] = None,
+    ) -> LLMDecision:
+        """
+        Record an LLM decision with full context and reasoning.
+
+        Args:
+            game_uuid: Game UUID
+            player_id: Player ID
+            turn_number: Turn number when decision was made
+            sequence_number: Sequence number (monotonically increasing)
+            game_state: Complete game state snapshot
+            player_state: Player state including cash, properties, etc.
+            available_actions: Actions available to the player
+            prompt: Prompt sent to the LLM
+            reasoning: LLM's reasoning process
+            chosen_action: Action chosen by the LLM
+            strategy_description: LLM's description of its strategy (optional)
+            processing_time_ms: Time taken to process the decision (optional)
+            model_version: LLM model version used (optional)
+
+        Returns:
+            Created LLMDecision instance
+        """
+        decision = LLMDecision(
+            game_uuid=game_uuid,
+            player_id=player_id,
+            turn_number=turn_number,
+            sequence_number=sequence_number,
+            game_state=game_state,
+            player_state=player_state,
+            available_actions=available_actions,
+            prompt=prompt,
+            reasoning=reasoning,
+            chosen_action=chosen_action,
+            strategy_description=strategy_description,
+            processing_time_ms=processing_time_ms,
+            model_version=model_version,
+        )
+
+        self.session.add(decision)
+        await self.session.flush()
+        logger.info(f"Added LLM decision for player {player_id} in game {game_uuid}")
+
+        return decision
+
+    async def get_llm_decisions_for_game(
+        self,
+        game_uuid: uuid.UUID,
+        player_id: Optional[int] = None,
+    ) -> List[LLMDecision]:
+        """
+        Retrieve all LLM decisions for a game, optionally filtered by player.
+
+        Args:
+            game_uuid: Game UUID
+            player_id: Filter by player ID (optional)
+
+        Returns:
+            List of LLMDecision instances ordered by sequence_number
+        """
+        stmt = select(LLMDecision).where(LLMDecision.game_uuid == game_uuid)
+
+        if player_id is not None:
+            stmt = stmt.where(LLMDecision.player_id == player_id)
+
+        stmt = stmt.order_by(LLMDecision.sequence_number)
+
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_llm_decision_by_sequence(
+        self,
+        game_uuid: uuid.UUID,
+        sequence_number: int,
+    ) -> Optional[LLMDecision]:
+        """
+        Get a specific LLM decision by sequence number.
+
+        Args:
+            game_uuid: Game UUID
+            sequence_number: Sequence number
+
+        Returns:
+            LLMDecision instance or None if not found
+        """
+        stmt = select(LLMDecision).where(
+            and_(
+                LLMDecision.game_uuid == game_uuid,
+                LLMDecision.sequence_number == sequence_number,
+            )
+        )
+
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def search_llm_reasoning(
+        self,
+        search_text: str,
+        limit: int = 100,
+    ) -> List[LLMDecision]:
+        """
+        Search for LLM decisions by reasoning content using full-text search.
+
+        Args:
+            search_text: Text to search for
+            limit: Maximum number of results to return
+
+        Returns:
+            List of matching LLMDecision instances
+        """
+        # Convert search text to tsquery format
+        search_query = " & ".join(search_text.split())
+
+        stmt = select(LLMDecision).where(
+            text("to_tsvector('english', reasoning) @@ to_tsquery('english', :search)")
+        ).params(search=search_query).limit(limit)
+
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def update_llm_player_strategy(
+        self,
+        game_uuid: uuid.UUID,
+        player_id: int,
+        strategy_profile: Dict[str, Any],
+    ) -> Optional[Player]:
+        """
+        Update an LLM player's strategy profile.
+
+        Args:
+            game_uuid: Game UUID
+            player_id: Player ID
+            strategy_profile: New strategy profile
+
+        Returns:
+            Updated Player instance or None if not found
+        """
+        stmt = select(Player).where(
+            and_(Player.game_uuid == game_uuid, Player.player_id == player_id)
+        )
+        result = await self.session.execute(stmt)
+        player = result.scalar_one_or_none()
+
+        if not player:
+            return None
+
+        player.llm_strategy_profile = strategy_profile
+        await self.session.flush()
+        logger.info(f"Updated strategy profile for player {player_id} in game {game_uuid}")
+
+        return player
