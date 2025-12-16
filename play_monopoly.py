@@ -95,8 +95,8 @@ def simulate_game(
     max_turns: int = None,
     log_file: str = None,
     llm_strategy: str = "balanced",
-    llm_model: str = "google/gemma-3-4b-it",
-    llm_url: str = "http://localhost:8001/v1/chat/completions",
+    llm_model: str = None,
+    llm_base_url: str = None,
 ) -> None:
     """
     Simulate a complete game of Monopoly.
@@ -109,8 +109,8 @@ def simulate_game(
         max_turns: Maximum number of turns (for time limit variant)
         log_file: Path to JSONL log file (None = auto-generate)
         llm_strategy: Strategy for LLM agents (aggressive, balanced, defensive)
-        llm_model: Model name for vLLM
-        llm_url: vLLM endpoint URL
+        llm_model: Model name (uses LLM_MODEL env var if not specified)
+        llm_base_url: LLM API base URL (uses LLM_BASE_URL env var if not specified)
     """
     # Initialize logger
     logger = GameLogger(log_file) if log_file is not None else GameLogger()
@@ -129,7 +129,7 @@ def simulate_game(
                 player_names[i],
                 model_name=llm_model,
                 strategy=llm_strategy,
-                vllm_url=llm_url,
+                base_url=llm_base_url,
                 decision_callback=decision_callback,
             )
             for i in range(num_players)
@@ -345,14 +345,14 @@ def main():
     parser.add_argument(
         "--llm-model",
         type=str,
-        default="google/gemma-3-4b-it",
-        help="Model name for vLLM (default: google/gemma-3-4b-it)",
+        default=None,
+        help="Model name (default: uses LLM_MODEL env var or 'gemma3:4b')",
     )
     parser.add_argument(
-        "--llm-url",
+        "--llm-base-url",
         type=str,
-        default="http://localhost:8001/v1/chat/completions",
-        help="vLLM endpoint URL",
+        default=None,
+        help="LLM API base URL (default: uses LLM_BASE_URL env var or 'http://localhost:11434/v1')",
     )
 
     args = parser.parse_args()
@@ -366,7 +366,7 @@ def main():
         log_file=args.log_file,
         llm_strategy=args.llm_strategy,
         llm_model=args.llm_model,
-        llm_url=args.llm_url,
+        llm_base_url=args.llm_base_url,
     )
 
 

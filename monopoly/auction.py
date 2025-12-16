@@ -10,6 +10,10 @@ class Auction:
     """
     Manages an auction for a property.
     Players bid in turn until all but one have passed.
+
+    The initiator (player who declined to buy) automatically places
+    a starting bid of 10% of the property price. If all other players
+    pass, the initiator wins with this minimum bid.
     """
 
     def __init__(
@@ -18,18 +22,27 @@ class Auction:
         property_name: str,
         eligible_player_ids: List[int],
         event_log: EventLog,
+        initiator_id: int,
+        property_price: int,
         max_bids_per_player: int = 3,
     ):
         self.property_position = property_position
         self.property_name = property_name
         self.eligible_player_ids = eligible_player_ids.copy()
         self.active_bidders = set(eligible_player_ids)
-        self.current_bid = 0
-        self.high_bidder: Optional[int] = None
         self.event_log = event_log
         self.is_complete = False
         self.max_bids_per_player = max_bids_per_player
         self.bid_counts: Dict[int, int] = {pid: 0 for pid in eligible_player_ids}
+        self.initiator_id = initiator_id
+
+        # Calculate starting bid: 10% of property price (minimum $1)
+        starting_bid = max(1, property_price // 10)
+
+        # Initiator automatically places the starting bid
+        self.current_bid = starting_bid
+        self.high_bidder = initiator_id
+        self.bid_counts[initiator_id] = 1
 
         self.event_log.log(
             EventType.AUCTION_START,
@@ -37,6 +50,20 @@ class Auction:
                 "property": property_name,
                 "position": property_position,
                 "players": eligible_player_ids,
+                "initiator": initiator_id,
+                "starting_bid": starting_bid,
+            },
+        )
+
+        # Log the automatic starting bid
+        self.event_log.log(
+            EventType.AUCTION_BID,
+            player_id=initiator_id,
+            details={
+                "property": self.property_name,
+                "amount": starting_bid,
+                "bid_number": 1,
+                "automatic": True,
             },
         )
 

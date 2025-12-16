@@ -385,12 +385,29 @@ class GameState:
 
         return True
 
-    def start_auction(self, position: int) -> Auction:
-        """Start an auction for a property."""
+    def start_auction(self, position: int, initiator_id: int) -> Auction:
+        """
+        Start an auction for a property.
+
+        Args:
+            position: Board position of the property
+            initiator_id: Player who declined to buy and starts the auction.
+                         This player automatically places a starting bid of 10%.
+        """
         space = self.board.get_space(position)
         eligible_players = [p.player_id for p in self.get_active_players()]
 
-        auction = Auction(position, space.name, eligible_players, self.event_log)
+        # Get property price for starting bid calculation
+        property_price = getattr(space, 'price', 0)
+
+        auction = Auction(
+            property_position=position,
+            property_name=space.name,
+            eligible_player_ids=eligible_players,
+            event_log=self.event_log,
+            initiator_id=initiator_id,
+            property_price=property_price,
+        )
         self.active_auction = auction
         return auction
 
