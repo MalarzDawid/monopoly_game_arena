@@ -1,156 +1,265 @@
 ## LLMAgent
 
-LLM‑powered agent that uses language models to make strategic decisions.
+LLM-powered agent that uses language models via OpenAI-compatible API to make strategic decisions in Monopoly.
 
-> **Note:** This is currently a stub implementation. The actual LLM integration will be implemented in a future version.
+### Overview
 
-### Planned Characteristics
+LLMAgent communicates with LLM backends (vLLM, Ollama, or any OpenAI-compatible API) to make intelligent game decisions. It:
 
-| Aspect | Planned Behavior |
-|--------|------------------|
-| **Strategy** | Context‑aware reasoning |
-| **Determinism** | Non‑deterministic (LLM sampling) |
-| **Property buying** | Value‑based evaluation |
-| **Building** | Strategic timing |
-| **Auctions** | Adaptive bidding |
-| **Trading** | Active negotiation |
+1. Serializes the current game state into a compact JSON format
+2. Constructs a prompt with system instructions, strategy profile, and legal actions
+3. Queries the LLM via OpenAI-compatible API (`/v1/chat/completions`)
+4. Parses the JSON response and validates the action
+5. Falls back to a safe action if parsing/validation fails
+6. Optionally logs decisions to the database for analysis
 
-### Current Status
+### Supported Backends
+
+| Backend | Default Port | Base URL |
+|---------|--------------|----------|
+| **Ollama** | 11434 | `http://localhost:11434/v1` |
+| **vLLM** | 8000 | `http://localhost:8000/v1` |
+| **OpenAI** | - | `https://api.openai.com/v1` |
+
+### Configuration
+
+LLMAgent can be configured via environment variables or constructor parameters:
+
+#### Environment Variables
+
+```bash
+# Base URL for OpenAI-compatible API
+LLM_BASE_URL=http://localhost:11434/v1  # Ollama (default)
+# LLM_BASE_URL=http://localhost:8000/v1  # vLLM
+
+# Model name (varies by backend)
+LLM_MODEL=gemma3:4b                      # Ollama
+# LLM_MODEL=google/gemma-3-4b-it         # vLLM
+
+# Optional: timeout and token limits
+LLM_TIMEOUT=30.0
+LLM_MAX_TOKENS=512
+```
+
+#### Constructor Parameters
 
 ```python
 from agents import LLMAgent
 
-agent = LLMAgent(player_id=0, name="Alice", model_name="gpt-4")
-
-# Currently raises NotImplementedError
-action = agent.choose_action(game, legal_actions)
-# NotImplementedError: LLMAgent is not yet implemented.
+agent = LLMAgent(
+    player_id=0,
+    name="Alice",
+    model_name="gemma3:4b",        # Optional, uses LLM_MODEL env var
+    strategy="balanced",            # aggressive, balanced, defensive
+    base_url="http://localhost:11434/v1",  # Optional, uses LLM_BASE_URL env var
+    decision_callback=my_callback,  # Optional, for logging decisions
+)
 ```
 
-### Planned Architecture
+### Strategy Profiles
+
+LLMAgent supports three built-in strategy profiles that influence decision-making:
+
+| Strategy | Cash Reserve | Property Buying | Auction Behavior | Building |
+|----------|--------------|-----------------|------------------|----------|
+| **aggressive** | Minimal | Buy everything | Bid high, outbid opponents | Build fast, leverage monopolies |
+| **balanced** | $200+ | Strategic purchases | Reasonable bids | Steady development |
+| **defensive** | $400+ | Conservative | Low bids, often pass | Careful building |
+
+Strategy templates are stored in `templates/`:
+- `templates/system_prompt.txt` - Base instructions
+- `templates/aggressive.txt` - Aggressive strategy
+- `templates/balanced.txt` - Balanced strategy
+- `templates/defensive.txt` - Defensive strategy
+
+### Decision Flow
 
 ```mermaid
-flowchart TB
-    subgraph Agent
-        LA[LLMAgent]
-        PM[Prompt Manager]
-        RP[Response Parser]
-    end
+sequenceDiagram
+    participant Runner as GameRunner
+    participant Agent as LLMAgent
+    participant LLM as LLM API
+    participant DB as Database
 
-    subgraph External
-        LLM[LLM API]
-        DB[(Decision Log)]
+    Runner->>Agent: choose_action(game, legal_actions)
+    Agent->>Agent: serialize_game_state()
+    Agent->>Agent: build_prompt()
+    Agent->>LLM: POST /v1/chat/completions
+    LLM-->>Agent: JSON response
+    Agent->>Agent: parse_response()
+    alt Valid action
+        Agent-->>Runner: chosen Action
+    else Parse error
+        Agent->>Agent: fallback_action()
+        Agent-->>Runner: safe Action
     end
-
-    subgraph Game
-        GS[GameState]
-        ACT[Legal Actions]
-    end
-
-    GS --> PM
-    ACT --> PM
-    PM --> LLM
-    LLM --> RP
-    RP --> LA
-    LA --> DB
+    Agent->>DB: log_decision (via callback)
 ```
 
-### Planned Interface
+### Usage Examples
+
+#### Basic Usage
 
 ```python
-class LLMAgent(Agent):
-    def __init__(
-        self,
-        player_id: int,
-        name: str,
-        model_name: str = "gpt-4",
-        temperature: float = 0.7,
-        strategy_prompt: str | None = None,
-    ):
-        super().__init__(player_id, name)
-        self.model_name = model_name
-        self.temperature = temperature
-        self.strategy_prompt = strategy_prompt
+from agents import LLMAgent
+from monopoly.rules import get_legal_actions, apply_action
 
-    def choose_action(self, game, legal_actions) -> Action:
-        # 1. Build prompt with game state
-        # 2. Query LLM
-        # 3. Parse response to Action
-        # 4. Log decision for analysis
-        raise NotImplementedError()
+# Create agent with default settings (uses env vars)
+agent = LLMAgent(player_id=0, name="Alice")
+
+# In game loop
+legal_actions = get_legal_actions(game, 0)
+action = agent.choose_action(game, legal_actions)
+apply_action(game, action)
 ```
+
+#### With Custom Strategy
+
+```python
+agent = LLMAgent(
+    player_id=0,
+    name="Aggressive AI",
+    strategy="aggressive",  # Buy everything, bid high
+)
+```
+
+#### With Decision Logging
+
+```python
+def log_decision(decision_data: dict):
+    print(f"Turn {decision_data['turn_number']}: {decision_data['chosen_action']}")
+    print(f"Reasoning: {decision_data['reasoning']}")
+
+agent = LLMAgent(
+    player_id=0,
+    name="Alice",
+    decision_callback=log_decision,
+)
+```
+
+### Prompt Structure
+
+The agent builds prompts with the following structure:
+
+```
+[System Prompt - from templates/system_prompt.txt]
+- JSON response format requirements
+- Monopoly rules reminder
+- Decision criteria
+
+[Strategy Profile - from templates/{strategy}.txt]
+- Strategy-specific instructions
+- Priority guidelines
+
+[Game State]
+- Turn number, phase
+- Active auction details (if any)
+- Pending payments
+
+[Player State]
+- Cash, position, jail status
+- Owned properties with details
+- Monopolies held
+
+[Available Actions]
+- List of legal actions with parameters
+
+Choose action and provide reasoning in JSON format.
+```
+
+### Response Format
+
+The LLM must respond with JSON:
+
+```json
+{
+  "reasoning": "Mediterranean Avenue completes my brown monopoly...",
+  "action": {
+    "action_type": "BUY_PROPERTY",
+    "params": {"position": 1}
+  }
+}
+```
+
+### Fallback Behavior
+
+If the LLM fails to respond or returns invalid JSON, the agent uses safe fallbacks:
+
+1. `END_TURN` - If available, end the turn safely
+2. `ROLL_DICE` - If dice roll is pending
+3. `PASS_AUCTION` - If in auction
+4. First legal action - Last resort
+
+Fallback usage is tracked in `decision_data['used_fallback']`.
 
 ### Database Integration
 
-LLM decisions will be logged to `llm_decisions` table:
+LLM decisions are logged to the `llm_decisions` table when using `GameRunner`:
 
-| Field | Purpose |
-|-------|---------|
-| `game_state` | Full game snapshot at decision time |
-| `player_state` | Agent's cash, properties, position |
-| `available_actions` | Legal actions presented |
-| `prompt` | Full prompt sent to LLM |
-| `reasoning` | LLM's step‑by‑step reasoning |
-| `chosen_action` | Final action selected |
-| `processing_time_ms` | Decision latency |
+| Field | Type | Description |
+|-------|------|-------------|
+| `game_uuid` | UUID | Foreign key to games table |
+| `player_id` | Integer | Player who made decision |
+| `turn_number` | Integer | Game turn number |
+| `sequence_number` | Integer | Decision sequence in game |
+| `game_state` | JSONB | Full game state snapshot |
+| `player_state` | JSONB | Player's state at decision |
+| `available_actions` | JSONB | Legal actions presented |
+| `prompt` | Text | Full prompt sent to LLM |
+| `reasoning` | Text | LLM's reasoning (searchable) |
+| `chosen_action` | JSONB | Final action selected |
+| `strategy_description` | Text | Strategy profile used |
+| `processing_time_ms` | Integer | Decision latency |
+| `model_version` | String | Model name used |
 
-### Planned Features
+#### Querying Decisions
 
-1. **Context Window Management**
-   - Summarize game history
-   - Include recent events
-   - Track opponent behavior
+```python
+from server.database import session_scope, GameRepository
 
-2. **Strategy Profiles**
-   - Aggressive (high risk, property accumulation)
-   - Conservative (cash preservation)
-   - Balanced (adaptive)
+async with session_scope() as session:
+    repo = GameRepository(session)
 
-3. **Reasoning Chain**
-   - Explicit step‑by‑step thinking
-   - Action justification
-   - Risk assessment
+    # Get all decisions for a game
+    decisions = await repo.get_llm_decisions_for_game(game_uuid)
 
-4. **Learning**
-   - Accumulate experience in `llm_learning_data`
-   - Adjust strategy based on outcomes
-   - Cross‑game pattern recognition
-
-### Example Prompt Structure (Planned)
-
-```
-You are playing Monopoly as {name}. Your goal is to win by bankrupting opponents.
-
-## Current State
-- Turn: {turn_number}
-- Your cash: ${cash}
-- Your properties: {properties}
-- Your position: {space_name}
-
-## Other Players
-{opponent_summaries}
-
-## Recent Events
-{recent_events}
-
-## Available Actions
-{formatted_actions}
-
-## Your Strategy
-{strategy_prompt}
-
-Choose the best action and explain your reasoning.
+    # Search by reasoning text
+    results = await repo.search_llm_reasoning("monopoly strategy")
 ```
 
-### Contributing
+### Performance Considerations
 
-To implement LLMAgent:
+| Aspect | Recommendation |
+|--------|----------------|
+| **Timeout** | 30 seconds default; increase for slower models |
+| **Token limit** | 512 tokens sufficient for decisions |
+| **Temperature** | 0.3 for consistency; higher for variety |
+| **Batch size** | One request per decision (no batching) |
 
-1. Add LLM client (OpenAI, Anthropic, etc.)
-2. Implement prompt building in `_build_prompt()`
-3. Implement response parsing in `_parse_response()`
-4. Add decision logging via `GameRepository.add_llm_decision()`
-5. Add tests for edge cases
+### Troubleshooting
+
+#### Connection Errors
+
+```
+httpx.ConnectError: Connection refused
+```
+
+Ensure your LLM backend is running:
+- Ollama: `ollama serve`
+- vLLM: `python -m vllm.entrypoints.openai.api_server --model <model>`
+
+#### Invalid JSON Responses
+
+If the model frequently returns invalid JSON:
+1. Try a larger/more capable model
+2. Reduce temperature (0.1-0.3)
+3. Check system prompt is clear about JSON format
+
+#### Slow Responses
+
+1. Use a smaller model (e.g., gemma3:4b vs gemma3:27b)
+2. Increase timeout: `LLM_TIMEOUT=60`
+3. Consider local GPU acceleration
 
 ### Reference
 
