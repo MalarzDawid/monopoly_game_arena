@@ -11,8 +11,8 @@ from events.mapper import map_events
 from snapshot import serialize_snapshot
 from server.database import session_scope, GameRepository
 
-# Reuse simple agents from CLI to keep skeleton minimal
-from play_monopoly import GreedyAgent, RandomAgent, ActionType
+from monopoly.game import ActionType
+from agents import GreedyAgent, RandomAgent
 
 
 class GameRunner:

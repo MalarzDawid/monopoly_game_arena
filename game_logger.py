@@ -119,6 +119,10 @@ class GameLogger:
 
         wrote = 0
         for m in mapped:
+            # Add turn_number to every event (use game's current turn if not present)
+            if "turn_number" not in m:
+                m["turn_number"] = game.turn_number
+
             # Enrich with names
             if "player_id" in m:
                 m["player_name"] = game.players[m["player_id"]].name

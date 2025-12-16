@@ -56,7 +56,7 @@ game = create_game(GameConfig(seed=123), players)
 Two simple agents are included for simulations: `RandomAgent` and `GreedyAgent`.
 
 ```python
-from monopoly_game_arena.play_monopoly import RandomAgent, GreedyAgent
+from agents import RandomAgent, GreedyAgent
 from monopoly.rules import get_legal_actions
 
 agents = [GreedyAgent(0, "Alice"), RandomAgent(1, "Bob")]
