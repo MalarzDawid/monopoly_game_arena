@@ -1,7 +1,8 @@
-"""LLM-powered agent for Monopoly using vLLM."""
+"""LLM-powered agent for Monopoly using OpenAI-compatible API (vLLM/Ollama)."""
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Callable
@@ -19,31 +20,44 @@ logger = logging.getLogger(__name__)
 # Template directory
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
-# Default vLLM endpoint (local)
-DEFAULT_VLLM_URL = "http://localhost:8001/v1/chat/completions"
+# LLM Configuration from environment variables
+# Both vLLM and Ollama support OpenAI-compatible API at /v1/chat/completions
+# - Ollama: http://localhost:11434/v1 (default)
+# - vLLM: http://localhost:8000/v1
+DEFAULT_LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
+DEFAULT_LLM_MODEL = os.getenv("LLM_MODEL", "gemma3:4b")
 
-# Timeouts
-LLM_TIMEOUT_SECONDS = 30.0
-MAX_TOKENS = 512  # Response tokens limit
+# Timeouts and limits
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT", "30.0"))
+MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "512"))
 
 
 class LLMAgent(Agent):
     """
-    LLM-powered agent that uses a language model via vLLM to make decisions.
+    LLM-powered agent that uses a language model via OpenAI-compatible API.
+
+    Supports both vLLM and Ollama backends through their OpenAI-compatible
+    endpoints (/v1/chat/completions).
 
     The agent:
     1. Serializes the current game state into a compact JSON format
     2. Constructs a prompt with system instructions, strategy, state, and legal actions
-    3. Queries the LLM via vLLM's OpenAI-compatible API
+    3. Queries the LLM via OpenAI-compatible API
     4. Parses the JSON response and validates the action
     5. Falls back to a safe action if parsing/validation fails
+
+    Configuration via environment variables:
+        LLM_BASE_URL: Base URL for API (default: http://localhost:11434/v1 for Ollama)
+        LLM_MODEL: Model name (default: gemma3:4b)
+        LLM_TIMEOUT: Request timeout in seconds (default: 30)
+        LLM_MAX_TOKENS: Max response tokens (default: 512)
 
     Attributes:
         player_id: The player's index in the game.
         name: The player's display name.
-        model_name: The LLM model name for vLLM.
+        model_name: The LLM model name.
         strategy: Strategy template name (aggressive, balanced, defensive).
-        vllm_url: URL of the vLLM endpoint.
+        base_url: Base URL for the OpenAI-compatible API.
         decision_callback: Optional callback for logging decisions to DB.
     """
 
@@ -54,9 +68,9 @@ class LLMAgent(Agent):
         self,
         player_id: int,
         name: str,
-        model_name: str = "google/gemma-3-4b-it",
+        model_name: str = None,
         strategy: str = "balanced",
-        vllm_url: str = DEFAULT_VLLM_URL,
+        base_url: str = None,
         decision_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
         """
@@ -65,15 +79,15 @@ class LLMAgent(Agent):
         Args:
             player_id: The player's index in the game.
             name: The player's display name.
-            model_name: The LLM model to use (default: google/gemma-3-4b-it).
+            model_name: The LLM model to use (default from LLM_MODEL env var).
             strategy: Strategy template (aggressive, balanced, defensive).
-            vllm_url: vLLM endpoint URL.
+            base_url: Base URL for OpenAI-compatible API (default from LLM_BASE_URL env var).
             decision_callback: Optional callback(decision_data) for DB logging.
         """
         super().__init__(player_id, name)
-        self.model_name = model_name
+        self.model_name = model_name or DEFAULT_LLM_MODEL
         self.strategy = strategy if strategy in self.STRATEGIES else "balanced"
-        self.vllm_url = vllm_url
+        self.base_url = base_url or DEFAULT_LLM_BASE_URL
         self.decision_callback = decision_callback
 
         # Load templates
@@ -333,7 +347,9 @@ class LLMAgent(Agent):
         return "\n".join(prompt_parts)
 
     def _query_llm(self, prompt: str) -> str:
-        """Query the vLLM endpoint using chat completions API."""
+        """Query the LLM using OpenAI-compatible chat completions API."""
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+
         payload = {
             "model": self.model_name,
             "messages": [
@@ -344,17 +360,17 @@ class LLMAgent(Agent):
             "stop": ["\n\n", "```"],
         }
 
-        response = self._client.post(self.vllm_url, json=payload)
+        response = self._client.post(url, json=payload)
         response.raise_for_status()
 
         result = response.json()
 
-        # vLLM chat completions returns choices[0].message.content
+        # OpenAI-compatible API returns choices[0].message.content
         if "choices" in result and len(result["choices"]) > 0:
             message = result["choices"][0].get("message", {})
             return message.get("content", "").strip()
 
-        raise ValueError("Invalid vLLM response format")
+        raise ValueError("Invalid LLM response format")
 
     def _parse_response(
         self,
