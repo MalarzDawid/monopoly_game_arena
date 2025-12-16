@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: monopoly_postgres
+    environment:
+      POSTGRES_DB: monopoly_arena
+      POSTGRES_USER: monopoly_user
+      POSTGRES_PASSWORD: monopoly_pass
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Opcjonalnie: skrypt inicjalizacyjny
+      # - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monopoly_user -d monopoly_arena"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - monopoly_network
+
+  # Opcjonalnie: pgAdmin dla wygody
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: monopoly_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@monopoly.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - monopoly_network
+    profiles:
+      - tools  # uruchom z: docker-compose --profile tools up
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  monopoly_network:
+    driver: bridge

@@ -36,11 +36,19 @@ class EventType(Enum):
     MORTGAGE = "mortgage"
     UNMORTGAGE = "unmortgage"
 
+    TRADE_PROPOSED = "trade_proposed"
+    TRADE_ACCEPTED = "trade_accepted"
+    TRADE_REJECTED = "trade_rejected"
+    TRADE_CANCELLED = "trade_cancelled"
+    TRADE_EXECUTED = "trade_executed"
+    TRADE_FAILED = "trade_failed"
+
     GO_TO_JAIL = "go_to_jail"
     JAIL_ATTEMPT = "jail_attempt"
     JAIL_RELEASE = "jail_release"
 
     TRANSFER = "transfer"
+    PAYMENT = "payment"
     BANKRUPTCY = "bankruptcy"
     GAME_END = "game_end"
 

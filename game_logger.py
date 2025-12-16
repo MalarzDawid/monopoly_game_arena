@@ -1,31 +1,38 @@
 """
 JSONL logger for Monopoly game events.
 
-Logs all important game events to a JSONL file for analysis and debugging.
+Logs all important game events to a JSONL file and PostgreSQL database.
 """
 
+import asyncio
 import json
 import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from events.mapper import map_events
+
 
 class GameLogger:
-    """Logger that writes game events to JSONL file."""
+    """Logger that writes game events to JSONL file and database."""
 
-    def __init__(self, log_file: str = None):
+    def __init__(self, log_file: str = None, game_id: str = None):
         """
         Initialize game logger.
 
         Args:
             log_file: Path to log file. If None, generates timestamped filename.
+            game_id: Game ID for database logging
         """
         if log_file is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_file = f"monopoly_game_{timestamp}.jsonl"
 
         self.log_file = log_file
+        self.game_id = game_id
         self.event_count = 0
+        self._engine_last_idx = 0  # last flushed index from engine's internal EventLog
+        self._db_enabled = game_id is not None
 
         # Create/clear log file
         with open(self.log_file, 'w') as f:
@@ -46,10 +53,170 @@ class GameLogger:
             **kwargs
         }
 
+        # Write to JSONL file
         with open(self.log_file, 'a') as f:
             f.write(json.dumps(event) + '\n')
 
+        # Write to database asynchronously (non-blocking)
+        if self._db_enabled:
+            asyncio.create_task(self._log_event_to_db(event_type, event))
+
         self.event_count += 1
+
+    async def _log_event_to_db(self, event_type: str, event: Dict[str, Any]):
+        """
+        Log event to database (async).
+
+        Args:
+            event_type: Type of event
+            event: Full event data
+        """
+        try:
+            from server.database import session_scope, GameRepository
+
+            async with session_scope() as session:
+                repo = GameRepository(session)
+
+                # Get game UUID from game_id
+                game = await repo.get_game_by_id(self.game_id)
+                if not game:
+                    return
+
+                # Extract turn number from event
+                turn_number = event.get("turn_number", 0)
+
+                # Extract actor player_id if available
+                actor_player_id = event.get("player_id")
+
+                # Add event to database
+                await repo.add_event(
+                    game_uuid=game.id,
+                    sequence_number=event.get("event_id", self.event_count),
+                    turn_number=turn_number,
+                    event_type=event_type,
+                    payload=event,
+                    actor_player_id=actor_player_id,
+                )
+        except Exception as e:
+            # Don't crash game if DB logging fails
+            print(f"⚠️  Database logging failed: {e}")
+
+    def flush_engine_events(self, game) -> int:
+        """Flush new internal engine events to JSONL using EventMapper.
+
+        Returns the number of events written.
+        """
+        events = game.event_log.events
+        if self._engine_last_idx >= len(events):
+            return 0
+
+        new_events = events[self._engine_last_idx :]
+        mapped = map_events(
+            game.board,
+            new_events,
+            player_positions={pid: p.position for pid, p in game.players.items()},
+        )
+
+        wrote = 0
+        for m in mapped:
+            # Add turn_number to every event (use game's current turn if not present)
+            if "turn_number" not in m:
+                m["turn_number"] = game.turn_number
+
+            # Enrich with names
+            if "player_id" in m:
+                m["player_name"] = game.players[m["player_id"]].name
+            if m.get("event_type") == "rent_payment":
+                payer_id = m.get("payer_id")
+                owner_id = m.get("owner_id")
+                if payer_id is not None:
+                    m["payer_name"] = game.players[payer_id].name
+                if owner_id is not None:
+                    m["owner_name"] = game.players[owner_id].name
+            if m.get("event_type") == "auction_end" and m.get("winner_id") is not None:
+                wid = m["winner_id"]
+                m["winner_name"] = game.players[wid].name
+                m["winner_cash_after"] = game.players[wid].cash
+
+            if m.get("event_type") == "game_end":
+                # Add turn number and winner name for analyzer convenience
+                m["turn_number"] = game.turn_number
+                wid = m.get("winner_id")
+                if wid is not None:
+                    m["winner_name"] = game.players[wid].name
+                # Include final standings summary
+                final = []
+                for pid, p in sorted(game.players.items()):
+                    try:
+                        worth = game._calculate_net_worth(pid)  # engine helper
+                    except Exception:
+                        worth = p.cash
+                    final.append({
+                        "player_id": pid,
+                        "player_name": p.name,
+                        "net_worth": worth,
+                        "is_bankrupt": p.is_bankrupt,
+                    })
+                m["final_standings"] = final
+
+            etype = m.pop("event_type")
+            self.log_event(etype, **m)
+            wrote += 1
+
+        self._engine_last_idx = len(events)
+        return wrote
+
+    def log_turn_snapshot(self, game) -> None:
+        """Log detailed state snapshots for all players at the start of a turn."""
+        for player_id, player in sorted(game.players.items()):
+            # Current space name
+            space = game.board.get_space(player.position)
+            position_name = space.name
+
+            properties = []
+            mortgaged_properties = []
+            houses = {}
+            hotels = []
+
+            for prop_pos in sorted(player.properties):
+                prop_space = game.board.get_property_space(prop_pos)
+                if not prop_space:
+                    continue
+                prop_name = prop_space.name
+                properties.append(prop_name)
+
+                ownership = game.property_ownership.get(prop_pos)
+                if ownership and ownership.is_mortgaged:
+                    mortgaged_properties.append(prop_name)
+
+                if ownership:
+                    if ownership.houses == 5:
+                        hotels.append(prop_name)
+                    elif ownership.houses > 0:
+                        houses[prop_name] = ownership.houses
+
+            # Net worth (approx, aligned with engine semantics)
+            try:
+                net_worth = game._calculate_net_worth(player_id)
+            except Exception:
+                net_worth = player.cash
+
+            self.log_player_state_detailed(
+                turn_number=game.turn_number,
+                player_id=player_id,
+                player_name=player.name,
+                cash=player.cash,
+                position=player.position,
+                position_name=position_name,
+                properties=properties,
+                mortgaged_properties=mortgaged_properties,
+                houses=houses,
+                hotels=hotels,
+                jail_free_cards=player.get_out_of_jail_cards,
+                in_jail=player.in_jail,
+                jail_turns=player.jail_turns,
+                net_worth=net_worth,
+            )
 
     def log_game_start(self, num_players: int, player_names: list, seed: Optional[int], max_turns: Optional[int]):
         """Log game start event."""
@@ -194,9 +361,18 @@ class GameLogger:
         )
 
     def log_jail_entry(self, player_id: int, player_name: str, reason: str):
-        """Log player going to jail."""
+        """Log player going to jail (legacy method, canonical event_type is 'go_to_jail')."""
         self.log_event(
-            "jail_entry",
+            "go_to_jail",
+            player_id=player_id,
+            player_name=player_name,
+            reason=reason
+        )
+
+    def log_go_to_jail(self, player_id: int, player_name: str, reason: str):
+        """Log player going to jail (canonical)."""
+        self.log_event(
+            "go_to_jail",
             player_id=player_id,
             player_name=player_name,
             reason=reason
@@ -229,6 +405,66 @@ class GameLogger:
             player_name=player_name,
             property_name=property_name,
             cost=cost
+        )
+
+    def log_trade_proposed(self, trade_id: int, proposer_id: int, proposer_name: str,
+                          recipient_id: int, recipient_name: str,
+                          proposer_offers: list, proposer_wants: list):
+        """Log trade proposal."""
+        self.log_event(
+            "trade_proposed",
+            trade_id=trade_id,
+            proposer_id=proposer_id,
+            proposer_name=proposer_name,
+            recipient_id=recipient_id,
+            recipient_name=recipient_name,
+            proposer_offers=proposer_offers,
+            proposer_wants=proposer_wants
+        )
+
+    def log_trade_accepted(self, trade_id: int, player_id: int, player_name: str):
+        """Log trade acceptance."""
+        self.log_event(
+            "trade_accepted",
+            trade_id=trade_id,
+            player_id=player_id,
+            player_name=player_name
+        )
+
+    def log_trade_rejected(self, trade_id: int, player_id: int, player_name: str):
+        """Log trade rejection."""
+        self.log_event(
+            "trade_rejected",
+            trade_id=trade_id,
+            player_id=player_id,
+            player_name=player_name
+        )
+
+    def log_trade_cancelled(self, trade_id: int, player_id: int, player_name: str):
+        """Log trade cancellation."""
+        self.log_event(
+            "trade_cancelled",
+            trade_id=trade_id,
+            player_id=player_id,
+            player_name=player_name
+        )
+
+    def log_trade_executed(self, trade_id: int, proposer_id: int, proposer_name: str,
+                          recipient_id: int, recipient_name: str,
+                          proposer_offers: list, proposer_wants: list,
+                          proposer_cash_after: int, recipient_cash_after: int):
+        """Log completed trade."""
+        self.log_event(
+            "trade_executed",
+            trade_id=trade_id,
+            proposer_id=proposer_id,
+            proposer_name=proposer_name,
+            recipient_id=recipient_id,
+            recipient_name=recipient_name,
+            proposer_offers=proposer_offers,
+            proposer_wants=proposer_wants,
+            proposer_cash_after=proposer_cash_after,
+            recipient_cash_after=recipient_cash_after
         )
 
     def log_bankruptcy(self, player_id: int, player_name: str, creditor_id: Optional[int], creditor_name: Optional[str]):

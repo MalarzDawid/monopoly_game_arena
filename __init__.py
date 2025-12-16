@@ -1,0 +1,2 @@
+"""Monopoly Arena package root."""
+
