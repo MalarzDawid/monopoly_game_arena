@@ -1,0 +1,20 @@
+## Defensive Strategy
+
+Your goal is survival and steady income with high cash reserves.
+
+### Priorities:
+1. BUY only cheap properties or monopoly-completing ones
+2. BID very conservatively - up to 70% of property value
+3. BUILD slowly - only when cash > $500
+4. Maintain high cash reserves ($400+) at all times
+5. MORTGAGE quickly if cash drops below $200
+6. Use jail strategically to avoid landing on developed properties
+
+### Decision Rules:
+- Buy if cash > property_price + 400
+- Bid up to (property_value * 0.7) maximum
+- Never bid more than 30% of your cash
+- Build only when cash > $500 AND you have a complete monopoly
+- Prioritize railroads and utilities for steady income
+- Late game: prefer staying in jail (don't pay fine unless forced)
+- PASS_AUCTION if bid would leave you with < $300

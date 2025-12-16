@@ -12,7 +12,7 @@ from snapshot import serialize_snapshot
 from server.database import session_scope, GameRepository
 
 from monopoly.game import ActionType
-from agents import GreedyAgent, RandomAgent
+from agents import GreedyAgent, RandomAgent, LLMAgent
 
 
 class GameRunner:
@@ -24,10 +24,11 @@ class GameRunner:
     - Broadcast mapped events to subscribed WebSocket clients
     """
 
-    def __init__(self, game_id: str, game: GameState, agent_type: str = "greedy", roles: Optional[List[str]] = None, tick_ms: Optional[int] = 500):
+    def __init__(self, game_id: str, game: GameState, agent_type: str = "greedy", roles: Optional[List[str]] = None, tick_ms: Optional[int] = 500, llm_strategy: str = "balanced"):
         self.game_id = game_id
         self.game = game
         self.agent_type = agent_type
+        self.llm_strategy = llm_strategy
         self.logger = GameLogger(game_id=game_id)  # Pass game_id for DB logging
         self._task: Optional[asyncio.Task] = None
         self._stop = asyncio.Event()
@@ -51,6 +52,10 @@ class GameRunner:
             roles = roles + [agent_type] * (len(names) - len(roles))
         self.roles: List[str] = roles
 
+        # Create LLM callback for logging
+        from play_monopoly import create_llm_decision_callback
+        llm_callback = create_llm_decision_callback(self.logger, names)
+
         # Prepare agents for non-human players
         self.agents: List[Optional[object]] = [None] * len(names)
         for i, role in enumerate(self.roles):
@@ -58,6 +63,8 @@ class GameRunner:
                 self.agents[i] = None
             elif role == "random":
                 self.agents[i] = RandomAgent(i, names[i])
+            elif role == "llm":
+                self.agents[i] = LLMAgent(i, names[i], strategy=self.llm_strategy, decision_callback=llm_callback)
             else:
                 self.agents[i] = GreedyAgent(i, names[i])
 

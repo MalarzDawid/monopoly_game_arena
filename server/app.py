@@ -44,11 +44,12 @@ registry = GameRegistry()
 
 class CreateGameRequest(BaseModel):
     players: int = Field(4, ge=2, le=8)
-    agent: str = Field("greedy", pattern=r"^(greedy|random)$")
-    roles: Optional[list[str]] = None  # e.g., ["human","greedy",...]
+    agent: str = Field("greedy", pattern=r"^(greedy|random|llm)$")
+    roles: Optional[list[str]] = None  # e.g., ["human","greedy","llm",...]
     seed: Optional[int] = None
     max_turns: Optional[int] = Field(default=100, ge=1)
     tick_ms: Optional[int] = Field(default=500, ge=0, le=10000)
+    llm_strategy: str = Field("balanced", pattern=r"^(aggressive|balanced|defensive)$")
 
 
 class CreateGameResponse(BaseModel):
@@ -64,6 +65,7 @@ async def create_game(req: CreateGameRequest):
         max_turns=req.max_turns,
         roles=req.roles,
         tick_ms=req.tick_ms,
+        llm_strategy=req.llm_strategy,
     )
     return CreateGameResponse(game_id=gid)
 

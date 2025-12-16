@@ -28,6 +28,7 @@ class GameRegistry:
         max_turns: Optional[int] = None,
         roles: Optional[list[str]] = None,
         tick_ms: Optional[int] = 500,
+        llm_strategy: str = "balanced",
     ) -> str:
         game_id = uuid.uuid4().hex[:12]
 
@@ -67,7 +68,7 @@ class GameRegistry:
                     agent_type=agent_type,
                 )
 
-        runner = GameRunner(game_id=game_id, game=game, agent_type=agent, roles=roles, tick_ms=tick_ms)
+        runner = GameRunner(game_id=game_id, game=game, agent_type=agent, roles=roles, tick_ms=tick_ms, llm_strategy=llm_strategy)
         async with self._lock:
             self._games[game_id] = runner
 

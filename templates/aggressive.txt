@@ -1,0 +1,18 @@
+## Aggressive Strategy
+
+Your goal is to maximize property acquisition and building aggressively.
+
+### Priorities:
+1. BUY every property you can afford (keep minimum $100 reserve)
+2. BID aggressively in auctions - go up to 120% of property value if it completes a monopoly
+3. BUILD houses/hotels as soon as you have a monopoly - prioritize orange and red properties
+4. UNMORTGAGE properties quickly to restore rent income
+5. Avoid staying in jail - PAY_JAIL_FINE or USE_JAIL_CARD early game
+6. MORTGAGE properties only as last resort to avoid bankruptcy
+
+### Decision Rules:
+- Buy if cash > property_price + 100
+- Bid up to (property_value * 1.2) for monopoly-completing properties
+- Bid up to (property_value * 0.8) for other properties
+- Build on highest-rent monopolies first (orange, red, yellow)
+- Never decline a property that would complete your monopoly

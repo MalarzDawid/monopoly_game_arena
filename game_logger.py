@@ -546,3 +546,51 @@ class GameLogger:
             jail_turns=jail_turns if in_jail else 0,
             net_worth=net_worth
         )
+
+    def log_llm_decision(
+        self,
+        turn_number: int,
+        player_id: int,
+        player_name: str,
+        action_type: str,
+        params: dict,
+        reasoning: str,
+        used_fallback: bool,
+        processing_time_ms: int,
+        model_version: str,
+        strategy: str,
+        error: Optional[str] = None,
+        raw_response: Optional[str] = None,
+    ):
+        """
+        Log LLM agent decision.
+
+        Args:
+            turn_number: Current turn number
+            player_id: Player ID
+            player_name: Player name
+            action_type: Chosen action type
+            params: Action parameters
+            reasoning: LLM's rationale for the decision
+            used_fallback: Whether fallback was used
+            processing_time_ms: Time taken for decision
+            model_version: LLM model version
+            strategy: Strategy template used
+            error: Error message if any
+            raw_response: Raw LLM response for debugging
+        """
+        self.log_event(
+            "llm_decision",
+            turn_number=turn_number,
+            player_id=player_id,
+            player_name=player_name,
+            action_type=action_type,
+            params=params,
+            reasoning=reasoning,
+            used_fallback=used_fallback,
+            processing_time_ms=processing_time_ms,
+            model_version=model_version,
+            strategy=strategy,
+            error=error,
+            raw_response=raw_response[:500] if raw_response else None,  # Truncate for log
+        )

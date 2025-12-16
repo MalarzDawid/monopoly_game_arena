@@ -4,17 +4,19 @@ Minimal CLI for simulating Monopoly games.
 
 This script demonstrates the game engine by running simulated games with
 simple AI players that make random or basic strategic decisions.
+
+Supports LLM agents via vLLM for AI-powered gameplay.
 """
 
 import argparse
-from typing import Optional
+from typing import Optional, List
 
 from monopoly.game import create_game, ActionType
 from monopoly.player import Player
 from monopoly.config import GameConfig
 from monopoly.rules import get_legal_actions, apply_action
 from game_logger import GameLogger
-from agents import RandomAgent, GreedyAgent
+from agents import RandomAgent, GreedyAgent, LLMAgent
 
 
 def log_all_player_states(game, logger):
@@ -64,6 +66,27 @@ def print_game_summary(game):
     print(f"\nTotal Turns: {game.turn_number}")
 
 
+def create_llm_decision_callback(logger: GameLogger, player_names: List[str]):
+    """Create a callback function for logging LLM decisions."""
+    def callback(decision_data: dict):
+        player_id = decision_data["player_id"]
+        logger.log_llm_decision(
+            turn_number=decision_data["turn_number"],
+            player_id=player_id,
+            player_name=player_names[player_id],
+            action_type=decision_data["chosen_action"]["action_type"],
+            params=decision_data["chosen_action"]["params"],
+            reasoning=decision_data["reasoning"],
+            used_fallback=decision_data["used_fallback"],
+            processing_time_ms=decision_data["processing_time_ms"],
+            model_version=decision_data["model_version"],
+            strategy=decision_data["strategy"],
+            error=decision_data.get("error"),
+            raw_response=decision_data.get("raw_response"),
+        )
+    return callback
+
+
 def simulate_game(
     num_players: int = 4,
     agent_type: str = "greedy",
@@ -71,17 +94,23 @@ def simulate_game(
     verbose: bool = True,
     max_turns: int = None,
     log_file: str = None,
+    llm_strategy: str = "balanced",
+    llm_model: str = "google/gemma-3-4b-it",
+    llm_url: str = "http://localhost:8001/v1/chat/completions",
 ) -> None:
     """
     Simulate a complete game of Monopoly.
 
     Args:
         num_players: Number of players (2-8)
-        agent_type: Type of AI ('random' or 'greedy')
+        agent_type: Type of AI ('random', 'greedy', or 'llm')
         seed: Random seed for reproducibility
         verbose: Whether to print detailed output
         max_turns: Maximum number of turns (for time limit variant)
         log_file: Path to JSONL log file (None = auto-generate)
+        llm_strategy: Strategy for LLM agents (aggressive, balanced, defensive)
+        llm_model: Model name for vLLM
+        llm_url: vLLM endpoint URL
     """
     # Initialize logger
     logger = GameLogger(log_file) if log_file is not None else GameLogger()
@@ -92,6 +121,19 @@ def simulate_game(
     # Create agents
     if agent_type == "random":
         agents = [RandomAgent(i, player_names[i]) for i in range(num_players)]
+    elif agent_type == "llm":
+        decision_callback = create_llm_decision_callback(logger, player_names)
+        agents = [
+            LLMAgent(
+                i,
+                player_names[i],
+                model_name=llm_model,
+                strategy=llm_strategy,
+                vllm_url=llm_url,
+                decision_callback=decision_callback,
+            )
+            for i in range(num_players)
+        ]
     else:
         agents = [GreedyAgent(i, player_names[i]) for i in range(num_players)]
 
@@ -275,8 +317,8 @@ def main():
         "--agent",
         type=str,
         default="greedy",
-        choices=["random", "greedy"],
-        help="AI agent type",
+        choices=["random", "greedy", "llm"],
+        help="AI agent type (llm requires vLLM server)",
     )
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
     parser.add_argument("--quiet", action="store_true", help="Reduce output verbosity")
@@ -292,6 +334,26 @@ def main():
         default=None,
         help="Path to JSONL log file (default: auto-generated timestamp)",
     )
+    # LLM-specific options
+    parser.add_argument(
+        "--llm-strategy",
+        type=str,
+        default="balanced",
+        choices=["aggressive", "balanced", "defensive"],
+        help="Strategy for LLM agents",
+    )
+    parser.add_argument(
+        "--llm-model",
+        type=str,
+        default="google/gemma-3-4b-it",
+        help="Model name for vLLM (default: google/gemma-3-4b-it)",
+    )
+    parser.add_argument(
+        "--llm-url",
+        type=str,
+        default="http://localhost:8001/v1/chat/completions",
+        help="vLLM endpoint URL",
+    )
 
     args = parser.parse_args()
 
@@ -302,6 +364,9 @@ def main():
         verbose=not args.quiet,
         max_turns=args.max_turns,
         log_file=args.log_file,
+        llm_strategy=args.llm_strategy,
+        llm_model=args.llm_model,
+        llm_url=args.llm_url,
     )
 
 
