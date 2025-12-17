@@ -150,6 +150,52 @@ Flags:
 | `--llm-model` | Model name (default from env) |
 | `--llm-base-url` | API base URL (default from env) |
 
+### Batch Games
+
+Run multiple games for testing, data collection, or LLM training:
+
+```bash
+# Run 10 games with greedy agents
+uv run python scripts/batch_games.py -n 10 -p 4 -a greedy
+
+# Run 5 games with LLM agents (balanced strategy)
+uv run python scripts/batch_games.py -n 5 -p 4 -a llm -s balanced
+
+# Run games with mixed agent roles
+uv run python scripts/batch_games.py -n 5 --roles llm,greedy,greedy,random
+
+# Run 9 games rotating through all LLM strategies
+uv run python scripts/batch_games.py -n 9 -p 4 -a llm --multi-strategy
+
+# Run games in parallel (5 games with 5 workers)
+uv run python scripts/batch_games.py -n 5 -w 5 -a llm -s balanced
+
+# Run without database saving (JSONL only)
+uv run python scripts/batch_games.py -n 10 -a greedy --no-db
+```
+
+Batch game flags:
+
+| Flag | Description |
+|------|-------------|
+| `-n, --games` | Number of games to run (default: 5) |
+| `-p, --players` | Number of players (2-8, default: 4) |
+| `-a, --agent` | Agent type: `random`, `greedy`, `llm` |
+| `-t, --max-turns` | Maximum turns per game (default: 100) |
+| `-s, --llm-strategy` | LLM strategy: `aggressive`, `balanced`, `defensive` |
+| `--roles` | Custom roles (comma-separated, e.g., `llm,greedy,greedy,random`) |
+| `--multi-strategy` | Rotate through all LLM strategies |
+| `-w, --workers` | Parallel workers (default: 1 = sequential) |
+| `--no-db` | Disable database saving (only write JSONL files) |
+| `-q, --quiet` | Less verbose output |
+
+Output includes:
+- Per-game results (turns, winner, time)
+- Win distribution statistics
+- Turn statistics (min/max/average)
+- Strategy breakdown (for multi-strategy runs)
+- JSONL log files for each game
+
 ### Running the Server
 
 Start the FastAPI server to play via web UI:

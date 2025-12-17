@@ -31,6 +31,7 @@ A deterministic, fully-tested Monopoly rules engine designed for AI agent compet
 | Section | Description |
 |---------|-------------|
 | [Quickstart](quickstart.md) | Get started in 5 minutes |
+| [Batch Games](quickstart.md#batch-games) | Run multiple games for testing |
 | [Agents](agents/index.md) | AI agent architecture |
 | [LLMAgent](agents/llm.md) | Configure LLM-powered agents |
 | [Game Rules](monopoly/index.md) | Core engine reference |
@@ -101,11 +102,20 @@ monopoly_game_arena/
 
 ## What's New
 
+### Batch Game Runner
+- Run multiple games for testing and data collection
+- Support for parallel execution with configurable workers
+- Mixed agent roles (LLM, greedy, random combinations)
+- Multi-strategy rotation for LLM comparison
+- Automatic database persistence with JSONL logging
+- Comprehensive statistics output (win rates, turn counts)
+
 ### LLMAgent Implementation
 - Full implementation with OpenAI-compatible API
 - Support for Ollama and vLLM backends
 - Three strategy profiles with customizable prompts
 - Automatic decision logging to database
+- Per-player decision sequence tracking
 
 ### Auction System Improvements
 - Initiator automatically places 10% starting bid
@@ -117,3 +127,9 @@ monopoly_game_arena/
 - House and hotel indicators
 - Player cash display
 - Hover tooltips for property info
+
+### Database Schema
+- LLM decision tracking with full game state snapshots
+- Player LLM configuration fields (model, parameters, strategy)
+- Full-text search on reasoning and strategy descriptions
+- Per-player decision sequences for multi-LLM games

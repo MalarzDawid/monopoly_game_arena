@@ -124,29 +124,38 @@ stats = await repo.get_game_statistics(game.id)
 
 ### LLM Decision Operations
 
+Each LLM player has their own decision sequence within a game. The unique constraint is on `(game_uuid, player_id, sequence_number)`.
+
 ```python
 # Record LLM decision
 decision = await repo.add_llm_decision(
     game_uuid=game.id,
     player_id=0,
     turn_number=5,
-    sequence_number=42,
+    sequence_number=42,  # Per-player sequence (1, 2, 3, ...)
     game_state={"turn": 5, "players": [...]},
     player_state={"cash": 1500, "properties": [...]},
     available_actions=[{"type": "ROLL_DICE"}, {"type": "END_TURN"}],
     prompt="You are playing Monopoly...",
     reasoning="I should roll the dice because...",
     chosen_action={"type": "ROLL_DICE"},
-    strategy_description="Aggressive property acquisition",
+    strategy_description="balanced",  # aggressive, balanced, defensive
     processing_time_ms=1250,
-    model_version="gpt-4-turbo"
+    model_version="gemma3:4b"
 )
 
-# Get all decisions for game
+# Get all decisions for a specific player in a game
 decisions = await repo.get_llm_decisions_for_game(game.id, player_id=0)
 
-# Get specific decision
-decision = await repo.get_llm_decision_by_sequence(game.id, sequence_number=42)
+# Get all LLM decisions for entire game (all players)
+all_decisions = await repo.get_llm_decisions_for_game(game.id)
+
+# Get specific decision by player and sequence
+decision = await repo.get_llm_decision_by_sequence(
+    game.id,
+    player_id=0,
+    sequence_number=42
+)
 
 # Full-text search in reasoning
 results = await repo.search_llm_reasoning("buy property", limit=100)

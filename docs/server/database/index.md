@@ -92,11 +92,16 @@ erDiagram
     int player_id
     int turn_number
     bigint sequence_number
+    datetime timestamp
     jsonb game_state
+    jsonb player_state
     jsonb available_actions
     text prompt
     text reasoning
     jsonb chosen_action
+    text strategy_description
+    int processing_time_ms
+    string model_version
   }
 ```
 
@@ -112,6 +117,8 @@ erDiagram
 ### Key Concepts
 
 **Sequence Numbers**: Events have monotonically increasing `sequence_number` (0, 1, 2, ...) ensuring strict ordering and enabling catch‑up queries.
+
+**LLM Decision Sequences**: Each LLM player has their own decision sequence per game. The unique constraint is on `(game_uuid, player_id, sequence_number)`, allowing multiple players to have independent sequences.
 
 **JSONB Payloads**: Event data stored as JSONB for flexibility. Each event type has different payload structure.
 

@@ -127,6 +127,24 @@ agent = LLMAgent(
 
 ```python
 def log_decision(decision_data: dict):
+    """
+    decision_data contains:
+    - player_id: int
+    - turn_number: int
+    - sequence_number: int (per-player decision count)
+    - game_state: dict (game state snapshot)
+    - player_state: dict (player's state)
+    - available_actions: dict (legal actions)
+    - prompt: str (full prompt sent to LLM)
+    - raw_response: str (LLM's raw response)
+    - reasoning: str (extracted reasoning)
+    - chosen_action: dict (action_type and params)
+    - used_fallback: bool (whether fallback was used)
+    - error: str|None (error message if any)
+    - processing_time_ms: int (decision latency)
+    - model_version: str (model name)
+    - strategy: str (strategy profile used)
+    """
     print(f"Turn {decision_data['turn_number']}: {decision_data['chosen_action']}")
     print(f"Reasoning: {decision_data['reasoning']}")
 
@@ -136,6 +154,20 @@ agent = LLMAgent(
     decision_callback=log_decision,
 )
 ```
+
+#### Batch Games Integration
+
+The batch games script automatically sets up decision callbacks for database logging:
+
+```bash
+# Run batch games with LLM agents - decisions are logged to database
+uv run python scripts/batch_games.py -n 5 -p 4 -a llm -s balanced
+
+# Run with mixed agents
+uv run python scripts/batch_games.py -n 5 --roles llm,greedy,greedy,random
+```
+
+Each LLM player maintains their own `sequence_number` counter (1, 2, 3, ...) for their decisions within a game. The database unique constraint is on `(game_uuid, player_id, sequence_number)`, allowing multiple LLM players in the same game.
 
 ### Prompt Structure
 
@@ -194,23 +226,26 @@ Fallback usage is tracked in `decision_data['used_fallback']`.
 
 ### Database Integration
 
-LLM decisions are logged to the `llm_decisions` table when using `GameRunner`:
+LLM decisions are logged to the `llm_decisions` table when using `GameRunner` or the batch games script:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `game_uuid` | UUID | Foreign key to games table |
-| `player_id` | Integer | Player who made decision |
+| `player_id` | Integer | Player who made decision (0, 1, 2, ...) |
 | `turn_number` | Integer | Game turn number |
-| `sequence_number` | Integer | Decision sequence in game |
+| `sequence_number` | Integer | Per-player decision sequence (1, 2, 3, ...) |
+| `timestamp` | DateTime | When decision was made |
 | `game_state` | JSONB | Full game state snapshot |
-| `player_state` | JSONB | Player's state at decision |
+| `player_state` | JSONB | Player's state at decision time |
 | `available_actions` | JSONB | Legal actions presented |
 | `prompt` | Text | Full prompt sent to LLM |
-| `reasoning` | Text | LLM's reasoning (searchable) |
-| `chosen_action` | JSONB | Final action selected |
-| `strategy_description` | Text | Strategy profile used |
-| `processing_time_ms` | Integer | Decision latency |
-| `model_version` | String | Model name used |
+| `reasoning` | Text | LLM's reasoning (full-text searchable) |
+| `chosen_action` | JSONB | Final action selected with params |
+| `strategy_description` | Text | Strategy profile used (aggressive/balanced/defensive) |
+| `processing_time_ms` | Integer | Decision latency in milliseconds |
+| `model_version` | String | Model name used (e.g., "gemma3:4b") |
+
+**Note**: The unique constraint is on `(game_uuid, player_id, sequence_number)`, allowing multiple LLM players to have independent decision sequences within the same game.
 
 #### Querying Decisions
 
