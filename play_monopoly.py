@@ -9,6 +9,9 @@ Supports LLM agents via vLLM for AI-powered gameplay.
 """
 
 import argparse
+import asyncio
+import uuid
+from datetime import datetime
 from typing import Optional, List
 
 from monopoly.game import create_game, ActionType
@@ -66,7 +69,7 @@ def print_game_summary(game):
     print(f"\nTotal Turns: {game.turn_number}")
 
 
-def create_llm_decision_callback(logger: GameLogger, player_names: List[str]):
+def create_llm_decision_callback(logger: GameLogger, player_names: List[str], decisions_buffer: List[dict]):
     """Create a callback function for logging LLM decisions."""
     def callback(decision_data: dict):
         player_id = decision_data["player_id"]
@@ -84,10 +87,12 @@ def create_llm_decision_callback(logger: GameLogger, player_names: List[str]):
             error=decision_data.get("error"),
             raw_response=decision_data.get("raw_response"),
         )
+        # Buffer for database persistence
+        decisions_buffer.append(decision_data)
     return callback
 
 
-def simulate_game(
+async def simulate_game(
     num_players: int = 4,
     agent_type: str = "greedy",
     seed: int = None,
@@ -97,6 +102,7 @@ def simulate_game(
     llm_strategy: str = "balanced",
     llm_model: str = None,
     llm_base_url: str = None,
+    save_to_db: bool = True,
 ) -> None:
     """
     Simulate a complete game of Monopoly.
@@ -111,18 +117,76 @@ def simulate_game(
         llm_strategy: Strategy for LLM agents (aggressive, balanced, defensive)
         llm_model: Model name (uses LLM_MODEL env var if not specified)
         llm_base_url: LLM API base URL (uses LLM_BASE_URL env var if not specified)
+        save_to_db: Whether to save game to database (default True)
     """
-    # Initialize logger
-    logger = GameLogger(log_file) if log_file is not None else GameLogger()
     # Create players
     player_names = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Hank"]
     players = [Player(i, player_names[i]) for i in range(num_players)]
+
+    # Database setup
+    game_id = None
+    game_uuid = None
+    db_initialized = False
+
+    if save_to_db:
+        try:
+            from server.database import init_db, close_db, session_scope, GameRepository
+            await init_db()
+            db_initialized = True
+
+            # Create game in database
+            game_id = f"game-{uuid.uuid4().hex[:8]}"
+            config_dict = {
+                "seed": seed,
+                "max_turns": max_turns,
+                "num_players": num_players,
+                "agent_type": agent_type,
+            }
+
+            async with session_scope() as session:
+                repo = GameRepository(session)
+                db_game = await repo.create_game(
+                    game_id=game_id,
+                    config=config_dict,
+                    metadata={"llm_strategy": llm_strategy} if agent_type == "llm" else {},
+                )
+                game_uuid = db_game.id
+
+                # Add players to database
+                for i in range(num_players):
+                    await repo.add_player(
+                        game_uuid=game_uuid,
+                        player_id=i,
+                        name=player_names[i],
+                        agent_type=agent_type,
+                    )
+
+                # Update game status to running
+                await repo.update_game_status(
+                    game_id=game_id,
+                    status="running",
+                    started_at=datetime.now(),
+                )
+
+            if verbose:
+                print(f"[DB] Game saved to database: {game_id}")
+        except Exception as e:
+            if verbose:
+                print(f"[DB] Database not available: {e}")
+            save_to_db = False
+            db_initialized = False
+
+    # Initialize logger (with game_id for database logging)
+    logger = GameLogger(log_file, game_id=game_id) if log_file is not None else GameLogger(game_id=game_id)
+
+    # Buffer for LLM decisions (for database persistence)
+    llm_decisions_buffer: List[dict] = []
 
     # Create agents
     if agent_type == "random":
         agents = [RandomAgent(i, player_names[i]) for i in range(num_players)]
     elif agent_type == "llm":
-        decision_callback = create_llm_decision_callback(logger, player_names)
+        decision_callback = create_llm_decision_callback(logger, player_names, llm_decisions_buffer)
         agents = [
             LLMAgent(
                 i,
@@ -296,6 +360,65 @@ def simulate_game(
     # Flush final engine events (includes game_end). Optionally log final standings.
     logger.flush_engine_events(game)
 
+    # Flush all pending events to database
+    if db_initialized and game_id:
+        await logger.flush_to_db()
+
+    # Update game status in database
+    if db_initialized and game_id:
+        try:
+            from server.database import session_scope, GameRepository, close_db
+
+            async with session_scope() as session:
+                repo = GameRepository(session)
+
+                # Update game status
+                await repo.update_game_status(
+                    game_id=game_id,
+                    status="finished",
+                    finished_at=datetime.now(),
+                    winner_id=game.winner,
+                    total_turns=game.turn_number,
+                )
+
+                # Update player results
+                for player_id, player in game.players.items():
+                    net_worth = game._calculate_net_worth(player_id)
+                    await repo.update_player_results(
+                        game_uuid=game_uuid,
+                        player_id=player_id,
+                        final_cash=player.cash,
+                        final_net_worth=net_worth,
+                        is_winner=(player_id == game.winner),
+                        is_bankrupt=player.is_bankrupt,
+                    )
+
+                # Save LLM decisions to database
+                if llm_decisions_buffer:
+                    for decision in llm_decisions_buffer:
+                        await repo.add_llm_decision(
+                            game_uuid=game_uuid,
+                            player_id=decision["player_id"],
+                            turn_number=decision["turn_number"],
+                            sequence_number=decision.get("sequence_number", 0),
+                            game_state=decision.get("game_state", {}),
+                            player_state=decision.get("player_state", {}),
+                            available_actions=decision.get("available_actions", {}),
+                            prompt=decision.get("prompt", ""),
+                            reasoning=decision.get("reasoning", ""),
+                            chosen_action=decision.get("chosen_action", {}),
+                            strategy_description=decision.get("strategy"),
+                            processing_time_ms=decision.get("processing_time_ms"),
+                            model_version=decision.get("model_version"),
+                        )
+
+            await close_db()
+            if verbose:
+                print(f"[DB] Game results saved to database")
+        except Exception as e:
+            if verbose:
+                print(f"[DB] Failed to update game in database: {e}")
+
     if verbose:
         print_game_summary(game)
         print(f"\nGame logged to: {logger.log_file}")
@@ -354,10 +477,15 @@ def main():
         default=None,
         help="LLM API base URL (default: uses LLM_BASE_URL env var or 'http://localhost:11434/v1')",
     )
+    parser.add_argument(
+        "--no-db",
+        action="store_true",
+        help="Disable database saving (only write to JSONL file)",
+    )
 
     args = parser.parse_args()
 
-    simulate_game(
+    asyncio.run(simulate_game(
         num_players=args.players,
         agent_type=args.agent,
         seed=args.seed,
@@ -367,7 +495,8 @@ def main():
         llm_strategy=args.llm_strategy,
         llm_model=args.llm_model,
         llm_base_url=args.llm_base_url,
-    )
+        save_to_db=not args.no_db,
+    ))
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-.PHONY: help install dev server db-up db-down db-migrate db-create-migration db-reset db-test db-stats test clean lint format
+.PHONY: help install dev server db-up db-down db-migrate db-create-migration db-reset db-test db-stats db-clear test clean lint format batch batch-llm batch-multi
 
 # Default target
 .DEFAULT_GOAL := help
@@ -122,6 +122,11 @@ db-stats: ## Show database statistics
 	@echo "$(BLUE)📊 Database statistics:$(NC)"
 	uv run python scripts/db_manager.py stats
 
+db-clear: ## Clear all data from tables (keeps structure)
+	@echo "$(BLUE)🗑️  Clearing all data from tables...$(NC)"
+	uv run python scripts/db_manager.py clear --force
+	@echo "$(GREEN)✅ All tables cleared$(NC)"
+
 db-backup: ## Backup database to file
 	@echo "$(BLUE)💾 Backing up database...$(NC)"
 	@mkdir -p backups
@@ -194,6 +199,32 @@ play-seed: ## Run game with specific seed (usage: make play-seed SEED=42)
 	fi
 	@echo "$(BLUE)🎲 Starting game with seed $(SEED)...$(NC)"
 	uv run python play_monopoly.py --seed $(SEED)
+
+batch: ## Run batch games (usage: make batch GAMES=10 AGENT=greedy)
+	@echo "$(BLUE)🎲 Running batch games...$(NC)"
+	uv run python scripts/batch_games.py \
+		--games $(or $(GAMES),5) \
+		--players $(or $(PLAYERS),4) \
+		--agent $(or $(AGENT),greedy) \
+		--max-turns $(or $(TURNS),100)
+
+batch-llm: ## Run batch LLM games (usage: make batch-llm GAMES=5 STRATEGY=balanced)
+	@echo "$(BLUE)🤖 Running batch LLM games...$(NC)"
+	uv run python scripts/batch_games.py \
+		--games $(or $(GAMES),5) \
+		--players $(or $(PLAYERS),4) \
+		--agent llm \
+		--llm-strategy $(or $(STRATEGY),balanced) \
+		--max-turns $(or $(TURNS),100)
+
+batch-multi: ## Run batch games with rotating LLM strategies
+	@echo "$(BLUE)🔄 Running batch games with rotating strategies...$(NC)"
+	uv run python scripts/batch_games.py \
+		--games $(or $(GAMES),9) \
+		--players $(or $(PLAYERS),4) \
+		--agent llm \
+		--multi-strategy \
+		--max-turns $(or $(TURNS),100)
 
 # ============================================================================
 # Cleanup

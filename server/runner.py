@@ -239,6 +239,9 @@ class GameRunner:
         # Final flush and broadcast end state
         await self.flush_and_broadcast()
 
+        # Ensure all events are persisted to database before updating status
+        await self.logger.flush_to_db()
+
         # Update final status and results in DB (best-effort)
         try:
             async with session_scope() as session:
@@ -319,6 +322,9 @@ class GameRunner:
 
         # Persist to JSONL
         self.logger.flush_engine_events(self.game)
+
+        # Persist pending events to database
+        await self.logger.flush_to_db()
 
         # Persist pending LLM decisions to database
         await self._flush_llm_decisions()
