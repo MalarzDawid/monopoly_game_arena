@@ -16,6 +16,7 @@ from dashboard.data import (
     get_game_events,
     get_recent_games,
     get_llm_decisions_for_game,
+    get_cash_timeline_data,
 )
 from dashboard.config import PLAYER_COLORS, BOARD_NAMES
 
@@ -70,9 +71,12 @@ def create_layout():
                                     ]
                                 ),
                             ]
-                        )
+                        ),
+                        className="dropdown-card",
+                        style={"overflow": "visible", "zIndex": 1000},
                     ),
                     className="mb-4",
+                    style={"position": "relative", "zIndex": 1000},
                 )
             ),
 
@@ -332,7 +336,9 @@ def update_players_table(game_id):
 
     rows = []
     for idx, row in df.iterrows():
-        player_color = PLAYER_COLORS[idx % len(PLAYER_COLORS)]
+        # Use player_id for color assignment, not iteration index
+        player_id = row.get("player_id", idx)
+        player_color = PLAYER_COLORS[int(player_id) % len(PLAYER_COLORS)]
         winner_badge = (
             dbc.Badge("WINNER", color="success", className="ms-2")
             if row.get("is_winner")
@@ -416,7 +422,7 @@ def update_players_table(game_id):
     Input("selected-game-store", "data"),
 )
 def update_cash_timeline(game_id):
-    """Update cash timeline chart."""
+    """Update cash timeline chart showing each player's cash over turns."""
     fig = go.Figure()
 
     if not game_id:
@@ -431,15 +437,77 @@ def update_cash_timeline(game_id):
         )
         return apply_dark_theme(fig)
 
-    # For now, show placeholder - would need to parse events for full timeline
-    fig.add_annotation(
-        text="Cash timeline requires event parsing\n(Feature in development)",
-        xref="paper",
-        yref="paper",
-        x=0.5,
-        y=0.5,
-        showarrow=False,
-        font=dict(size=14, color="#6b7280"),
+    try:
+        df = get_cash_timeline_data(game_id)
+    except Exception:
+        df = pd.DataFrame()
+
+    if df.empty:
+        fig.add_annotation(
+            text="No cash data available for this game",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=14, color="#6b7280"),
+        )
+        return apply_dark_theme(fig)
+
+    # Get unique players
+    players = df[["player_id", "player_name"]].drop_duplicates()
+
+    # Create a line for each player
+    for _, player in players.iterrows():
+        player_id = player["player_id"]
+        player_name = player["player_name"]
+        player_color = PLAYER_COLORS[int(player_id) % len(PLAYER_COLORS)]
+
+        # Get this player's cash data
+        player_data = df[df["player_id"] == player_id].copy()
+
+        # Sort by turn number and keep last value per turn (in case of multiple events)
+        player_data = player_data.sort_values("turn_number")
+        player_data = player_data.groupby("turn_number").last().reset_index()
+
+        fig.add_trace(
+            go.Scatter(
+                x=player_data["turn_number"],
+                y=player_data["cash"],
+                mode="lines+markers",
+                name=player_name,
+                line=dict(color=player_color, width=2),
+                marker=dict(size=4),
+                hovertemplate=(
+                    f"<b>{player_name}</b><br>"
+                    "Turn %{x}<br>"
+                    "Cash: $%{y:,.0f}<extra></extra>"
+                ),
+            )
+        )
+
+    # Update layout
+    fig.update_layout(
+        xaxis_title="Turn",
+        yaxis_title="Cash ($)",
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        margin=dict(l=60, r=20, t=40, b=60),
+    )
+
+    # Add starting cash reference line
+    fig.add_hline(
+        y=1500,
+        line_dash="dash",
+        line_color="#6b7280",
+        annotation_text="Starting cash ($1,500)",
+        annotation_position="bottom right",
     )
 
     return apply_dark_theme(fig)

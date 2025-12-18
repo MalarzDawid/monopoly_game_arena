@@ -19,6 +19,12 @@ from .queries import (
     get_active_games,
     get_recent_games,
     get_games_timeline,
+    get_latest_game_events,
+    get_cash_timeline_data,
+    # Live game queries
+    get_live_player_states,
+    get_live_game_info,
+    get_active_games_with_turn,
 )
 
 __all__ = [
@@ -36,4 +42,10 @@ __all__ = [
     "get_active_games",
     "get_recent_games",
     "get_games_timeline",
+    "get_latest_game_events",
+    "get_cash_timeline_data",
+    # Live game queries
+    "get_live_player_states",
+    "get_live_game_info",
+    "get_active_games_with_turn",
 ]

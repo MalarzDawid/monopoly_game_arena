@@ -12,10 +12,14 @@ import plotly.graph_objects as go
 from dashboard.components.charts import apply_dark_theme
 from dashboard.data import (
     get_active_games,
+    get_active_games_with_turn,
     get_game_by_id,
     get_game_players,
     get_game_events,
+    get_latest_game_events,
     get_llm_decisions_for_game,
+    get_live_player_states,
+    get_live_game_info,
 )
 from dashboard.config import PLAYER_COLORS, BOARD_NAMES
 
@@ -205,7 +209,7 @@ def update_timestamp(n):
 def update_active_games(_):
     """Update list of active games."""
     try:
-        df = get_active_games()
+        df = get_active_games_with_turn()
     except Exception:
         df = pd.DataFrame()
 
@@ -281,7 +285,8 @@ def update_game_header(game_id, _):
         )
 
     try:
-        game = get_game_by_id(game_id)
+        # Use live game info to get current_turn from events
+        game = get_live_game_info(game_id)
     except Exception:
         game = None
 
@@ -298,6 +303,9 @@ def update_game_header(game_id, _):
         "finished": "secondary",
     }.get(status, "secondary")
 
+    # Use current_turn from events (not total_turns which is only set at end)
+    current_turn = game.get("current_turn", 0) or game.get("total_turns", 0)
+
     return dbc.Card(
         dbc.CardBody(
             dbc.Row(
@@ -311,7 +319,7 @@ def update_game_header(game_id, _):
                                 className="me-2",
                             ),
                             dbc.Badge(
-                                f"Turn {game.get('total_turns', 0)}",
+                                f"Turn {current_turn}",
                                 color="dark",
                             ),
                         ],
@@ -342,31 +350,51 @@ def update_player_status(game_id, _):
     if not game_id:
         return html.P("Select a game to view player status.", className="text-muted")
 
+    # Try to get live player states from events first
     try:
-        df = get_game_players(game_id)
+        df = get_live_player_states(game_id)
     except Exception:
         df = pd.DataFrame()
+
+    # Fallback to players table if no live data
+    if df.empty:
+        try:
+            df = get_game_players(game_id)
+            # Use final_cash/final_net_worth as fallback
+            if not df.empty:
+                df = df.rename(columns={
+                    "final_cash": "cash",
+                    "final_net_worth": "net_worth"
+                })
+        except Exception:
+            df = pd.DataFrame()
 
     if df.empty:
         return html.P("No player data available.", className="text-muted")
 
     player_cards = []
     for idx, row in df.iterrows():
-        name = row.get("name", f"Player {idx}")
-        cash = row.get("final_cash", 0) or 0
-        net_worth = row.get("final_net_worth", 0) or 0
+        player_id = row.get("player_id", idx)
+        name = row.get("player_name") or row.get("name", f"Player {player_id}")
+        cash = row.get("cash", 0) or 0
+        net_worth = row.get("net_worth", 0) or 0
         is_bankrupt = row.get("is_bankrupt", False)
-        agent_type = row.get("agent_type", "unknown")
-        color = PLAYER_COLORS[idx % len(PLAYER_COLORS)]
+        agent_type = row.get("agent_type", "")
+        position_name = row.get("position_name", "")
+        in_jail = row.get("in_jail", False)
+        color = PLAYER_COLORS[int(player_id) % len(PLAYER_COLORS)]
 
         # Status indicator
         if is_bankrupt:
             status_badge = dbc.Badge("BANKRUPT", color="danger")
+        elif in_jail:
+            status_badge = dbc.Badge("IN JAIL", color="warning")
         else:
             status_badge = dbc.Badge("ACTIVE", color="success")
 
         # Cash bar (relative to starting $1500)
-        cash_percent = min(100, (cash / 1500) * 100)
+        # Use 'is not None' to handle cash=0 correctly (0 is a valid value)
+        cash_percent = min(100, (cash / 1500) * 100) if cash is not None and cash >= 0 else 0
 
         player_cards.append(
             dbc.Col(
@@ -393,7 +421,7 @@ def update_player_status(game_id, _):
                             ),
                             html.Small(
                                 [
-                                    dbc.Badge(agent_type, color="info", className="me-2"),
+                                    dbc.Badge(agent_type, color="info", className="me-2") if agent_type else None,
                                     f"${cash:,}",
                                 ],
                                 className="d-block mb-2",
@@ -404,7 +432,14 @@ def update_player_status(game_id, _):
                                 className="mb-1",
                                 style={"height": "6px"},
                             ),
-                            html.Small(f"Net worth: ${net_worth:,}", className="text-muted"),
+                            html.Small(
+                                [
+                                    f"Net worth: ${net_worth:,}",
+                                    html.Br() if position_name else None,
+                                    html.Span(f"@ {position_name}", className="text-info") if position_name else None,
+                                ],
+                                className="text-muted",
+                            ),
                         ]
                     ),
                     className="h-100",
@@ -442,7 +477,7 @@ def update_events_feed(game_id, _):
     items = []
     for _, row in df.head(30).iterrows():
         event_type = row.get("event_type", "unknown")
-        turn = row.get("turn_number", 0)
+        turn = int(row.get("turn_number", 0) or 0)
         player_id = row.get("actor_player_id")
 
         # Event type badge colors
@@ -469,15 +504,20 @@ def update_events_feed(game_id, _):
 
         description = _format_event_description(event_type, payload)
 
+        # Format player_id as int (pandas may return float)
+        player_label = ""
+        if player_id is not None and not pd.isna(player_id):
+            player_label = f"P{int(player_id)}"
+
         items.append(
             html.Div(
                 [
                     dbc.Badge(f"T{turn}", color="dark", className="me-1"),
                     dbc.Badge(event_type, color=badge_color, className="me-1"),
                     html.Small(
-                        f"P{player_id}" if player_id is not None else "",
+                        player_label,
                         className="text-muted me-2",
-                    ),
+                    ) if player_label else None,
                     html.Small(description, className="text-muted"),
                 ],
                 className="mb-2 py-1 border-bottom border-secondary",
@@ -519,36 +559,60 @@ def update_current_turn(game_id, _):
         return html.P("Select a game to view turn info.", className="text-muted")
 
     try:
-        game = get_game_by_id(game_id)
+        # Use live game info which gets current_turn from events
+        game = get_live_game_info(game_id)
         players_df = get_game_players(game_id)
-        events_df = get_game_events(game_id, limit=10)
+        # Use get_latest_game_events which returns newest events first
+        events_df = get_latest_game_events(game_id, limit=10)
     except Exception:
         return html.P("Error loading turn info.", className="text-muted")
 
     if not game:
         return html.P("Game not found.", className="text-muted")
 
-    current_turn = game.get("total_turns", 0)
+    # Use current_turn from events (not total_turns which is only set at end)
+    current_turn = game.get("current_turn", 0) or game.get("total_turns", 0)
     status = game.get("status", "unknown")
 
-    # Get current player (approximate from recent events)
+    # Get current player from most recent event - use player_name from payload
     current_player = "Unknown"
+    last_event_type = ""
     if not events_df.empty:
-        last_event = events_df.iloc[-1]
-        player_id = last_event.get("actor_player_id")
-        if player_id is not None and not players_df.empty:
-            player_row = players_df[players_df.index == player_id]
-            if not player_row.empty:
-                current_player = player_row.iloc[0].get("name", f"Player {player_id}")
+        # First row is the newest event (sorted DESC)
+        last_event = events_df.iloc[0]
+        last_event_type = last_event.get("event_type", "")
+
+        # Get player_name directly from payload
+        payload = last_event.get("payload", {})
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = {}
+
+        # Try player_name first, then fall back to actor_player_id
+        player_name = payload.get("player_name")
+        if player_name:
+            current_player = player_name
+        else:
+            player_id = last_event.get("actor_player_id")
+            if player_id is not None and not pd.isna(player_id):
+                player_id = int(player_id)
+                if not players_df.empty:
+                    player_rows = players_df[players_df["player_id"] == player_id]
+                    if not player_rows.empty:
+                        current_player = player_rows.iloc[0].get("name", f"Player {player_id}")
+                    else:
+                        current_player = f"Player {player_id}"
 
     # Winner info if game finished
     winner_info = None
     if status == "finished" and game.get("winner_id") is not None:
         winner_id = game.get("winner_id")
         if not players_df.empty:
-            winner_row = players_df[players_df.index == winner_id]
-            if not winner_row.empty:
-                winner_name = winner_row.iloc[0].get("name", f"Player {winner_id}")
+            winner_rows = players_df[players_df["player_id"] == winner_id]
+            if not winner_rows.empty:
+                winner_name = winner_rows.iloc[0].get("name", f"Player {winner_id}")
                 winner_info = dbc.Alert(
                     [
                         html.I(className="fas fa-trophy me-2"),
@@ -581,7 +645,8 @@ def update_current_turn(game_id, _):
                     html.P(
                         [
                             html.Strong("Last Action: "),
-                            html.Span(current_player, className="text-muted"),
+                            html.Span(current_player, className="text-info"),
+                            html.Span(f" ({last_event_type})", className="text-muted") if last_event_type else None,
                         ]
                     ),
                 ]

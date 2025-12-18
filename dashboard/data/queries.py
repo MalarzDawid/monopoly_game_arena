@@ -26,6 +26,12 @@ def get_connection():
     try:
         conn = psycopg2.connect(DATABASE_URL)
         yield conn
+    except psycopg2.OperationalError as e:
+        logger.error(f"Database connection failed: {e}")
+        raise
+    except psycopg2.Error as e:
+        logger.error(f"Database error: {e}")
+        raise
     finally:
         if conn:
             conn.close()
@@ -170,6 +176,151 @@ def get_game_events(
     return execute_query_df(query, tuple(params))
 
 
+def get_latest_game_events(game_id: str, limit: int = 10) -> pd.DataFrame:
+    """Get the most recent events for a game (newest first)."""
+    query = """
+        SELECT
+            e.sequence_number,
+            e.turn_number,
+            e.event_type,
+            e.timestamp,
+            e.payload,
+            e.actor_player_id
+        FROM game_events e
+        JOIN games g ON e.game_uuid = g.id
+        WHERE g.game_id = %s
+        ORDER BY e.sequence_number DESC
+        LIMIT %s
+    """
+    return execute_query_df(query, (game_id, limit))
+
+
+def get_cash_timeline_data(game_id: str) -> pd.DataFrame:
+    """
+    Get cash values over time for each player in a game.
+
+    Reconstructs cash timeline from various event types:
+    - purchase: cash_after for buyer
+    - rent_payment: payer_cash_after, owner_cash_after
+    - auction_end: winner_cash_after
+    - pass_go: player gets +$200
+    - tax_payment: player pays tax
+
+    Returns DataFrame with columns: turn_number, player_id, player_name, cash
+    """
+    query = """
+        WITH game_info AS (
+            SELECT id as game_uuid FROM games WHERE game_id = %s
+        ),
+        players_info AS (
+            SELECT player_id, name as player_name
+            FROM players p
+            JOIN game_info gi ON p.game_uuid = gi.game_uuid
+        ),
+        -- Starting cash for all players (turn 0)
+        starting_cash AS (
+            SELECT
+                0 as turn_number,
+                p.player_id,
+                p.player_name,
+                1500 as cash,
+                0 as sequence_number
+            FROM players_info p
+        ),
+        -- Cash changes from purchase events
+        purchase_cash AS (
+            SELECT
+                e.turn_number,
+                (e.payload->>'player_id')::int as player_id,
+                e.payload->>'player_name' as player_name,
+                (e.payload->>'cash_after')::int as cash,
+                e.sequence_number
+            FROM game_events e
+            JOIN game_info gi ON e.game_uuid = gi.game_uuid
+            WHERE e.event_type = 'purchase'
+                AND e.payload->>'cash_after' IS NOT NULL
+        ),
+        -- Cash changes from rent payments (payer)
+        rent_payer_cash AS (
+            SELECT
+                e.turn_number,
+                (e.payload->>'payer_id')::int as player_id,
+                e.payload->>'payer_name' as player_name,
+                (e.payload->>'payer_cash_after')::int as cash,
+                e.sequence_number
+            FROM game_events e
+            JOIN game_info gi ON e.game_uuid = gi.game_uuid
+            WHERE e.event_type = 'rent_payment'
+                AND e.payload->>'payer_cash_after' IS NOT NULL
+                AND e.payload->>'payer_id' IS NOT NULL
+        ),
+        -- Cash changes from rent payments (owner)
+        rent_owner_cash AS (
+            SELECT
+                e.turn_number,
+                COALESCE(
+                    (e.payload->>'owner_id')::int,
+                    (SELECT (e2.payload->>'player_id')::int
+                     FROM game_events e2
+                     WHERE e2.game_uuid = e.game_uuid
+                       AND e2.event_type = 'purchase'
+                       AND e2.payload->>'property_name' = e.payload->>'property_name'
+                     ORDER BY e2.sequence_number DESC LIMIT 1)
+                ) as player_id,
+                COALESCE(
+                    e.payload->>'owner_name',
+                    (SELECT e2.payload->>'player_name'
+                     FROM game_events e2
+                     WHERE e2.game_uuid = e.game_uuid
+                       AND e2.event_type = 'purchase'
+                       AND e2.payload->>'property_name' = e.payload->>'property_name'
+                     ORDER BY e2.sequence_number DESC LIMIT 1)
+                ) as player_name,
+                (e.payload->>'owner_cash_after')::int as cash,
+                e.sequence_number
+            FROM game_events e
+            JOIN game_info gi ON e.game_uuid = gi.game_uuid
+            WHERE e.event_type = 'rent_payment'
+                AND e.payload->>'owner_cash_after' IS NOT NULL
+        ),
+        -- Cash changes from auction wins
+        auction_cash AS (
+            SELECT
+                e.turn_number,
+                (e.payload->>'winner_id')::int as player_id,
+                e.payload->>'winner_name' as player_name,
+                (e.payload->>'winner_cash_after')::int as cash,
+                e.sequence_number
+            FROM game_events e
+            JOIN game_info gi ON e.game_uuid = gi.game_uuid
+            WHERE e.event_type = 'auction_end'
+                AND e.payload->>'winner_cash_after' IS NOT NULL
+                AND e.payload->>'winner_id' IS NOT NULL
+        ),
+        -- Combine all cash events
+        all_cash_events AS (
+            SELECT * FROM starting_cash
+            UNION ALL
+            SELECT * FROM purchase_cash
+            UNION ALL
+            SELECT * FROM rent_payer_cash
+            UNION ALL
+            SELECT * FROM rent_owner_cash WHERE player_id IS NOT NULL
+            UNION ALL
+            SELECT * FROM auction_cash
+        )
+        SELECT
+            turn_number,
+            player_id,
+            COALESCE(player_name, 'Player ' || player_id) as player_name,
+            cash
+        FROM all_cash_events
+        WHERE player_id IS NOT NULL AND cash IS NOT NULL
+        ORDER BY sequence_number, turn_number, player_id
+    """
+    return execute_query_df(query, (game_id,))
+
+
 def get_recent_games(limit: int = 10) -> pd.DataFrame:
     """Get recent games with player info."""
     query = """
@@ -286,15 +437,32 @@ def get_win_rates_by_agent_type() -> pd.DataFrame:
 def get_win_rates_by_model_strategy() -> pd.DataFrame:
     """Get win rates grouped by LLM model and strategy."""
     query = """
-        WITH llm_players AS (
+        WITH llm_decision_info AS (
+            -- Get model and strategy from llm_decisions table (one per player per game)
+            SELECT DISTINCT ON (d.game_uuid, d.player_id)
+                d.game_uuid,
+                d.player_id,
+                d.model_version,
+                d.strategy_description
+            FROM llm_decisions d
+            ORDER BY d.game_uuid, d.player_id, d.sequence_number DESC
+        ),
+        llm_players AS (
             SELECT
                 p.game_uuid,
                 p.player_id,
                 p.is_winner,
                 p.final_net_worth,
                 p.is_bankrupt,
-                COALESCE(p.llm_model_name, 'unknown') as model_name,
+                -- Get model from: llm_decisions > players table > 'unknown'
                 COALESCE(
+                    ldi.model_version,
+                    p.llm_model_name,
+                    'unknown'
+                ) as model_name,
+                -- Get strategy from: llm_decisions > players table > game config > 'unknown'
+                COALESCE(
+                    ldi.strategy_description,
                     p.llm_strategy_profile->>'strategy',
                     g.config->>'llm_strategy',
                     g.metadata->>'llm_strategy',
@@ -303,6 +471,7 @@ def get_win_rates_by_model_strategy() -> pd.DataFrame:
                 g.total_turns
             FROM players p
             JOIN games g ON p.game_uuid = g.id
+            LEFT JOIN llm_decision_info ldi ON ldi.game_uuid = p.game_uuid AND ldi.player_id = p.player_id
             WHERE p.agent_type = 'llm' AND g.status = 'finished'
         )
         SELECT
@@ -330,7 +499,16 @@ def get_win_rates_by_model_strategy() -> pd.DataFrame:
 def get_strategy_metrics() -> pd.DataFrame:
     """Get aggregated metrics grouped by strategy only."""
     query = """
-        WITH llm_players AS (
+        WITH llm_decision_info AS (
+            -- Get strategy from llm_decisions table (one per player per game)
+            SELECT DISTINCT ON (d.game_uuid, d.player_id)
+                d.game_uuid,
+                d.player_id,
+                d.strategy_description
+            FROM llm_decisions d
+            ORDER BY d.game_uuid, d.player_id, d.sequence_number DESC
+        ),
+        llm_players AS (
             SELECT
                 p.game_uuid,
                 p.player_id,
@@ -338,6 +516,7 @@ def get_strategy_metrics() -> pd.DataFrame:
                 p.final_net_worth,
                 p.is_bankrupt,
                 COALESCE(
+                    ldi.strategy_description,
                     p.llm_strategy_profile->>'strategy',
                     g.config->>'llm_strategy',
                     g.metadata->>'llm_strategy',
@@ -346,6 +525,7 @@ def get_strategy_metrics() -> pd.DataFrame:
                 g.total_turns
             FROM players p
             JOIN games g ON p.game_uuid = g.id
+            LEFT JOIN llm_decision_info ldi ON ldi.game_uuid = p.game_uuid AND ldi.player_id = p.player_id
             WHERE p.agent_type = 'llm' AND g.status = 'finished'
         )
         SELECT
@@ -372,10 +552,20 @@ def get_strategy_metrics() -> pd.DataFrame:
 def get_property_purchases_by_strategy() -> pd.DataFrame:
     """Get property purchase patterns grouped by strategy."""
     query = """
-        WITH purchases AS (
+        WITH llm_decision_info AS (
+            -- Get strategy from llm_decisions table (one per player per game)
+            SELECT DISTINCT ON (d.game_uuid, d.player_id)
+                d.game_uuid,
+                d.player_id,
+                d.strategy_description
+            FROM llm_decisions d
+            ORDER BY d.game_uuid, d.player_id, d.sequence_number DESC
+        ),
+        purchases AS (
             SELECT
                 p.game_uuid,
                 COALESCE(
+                    ldi.strategy_description,
                     p.llm_strategy_profile->>'strategy',
                     g.config->>'llm_strategy',
                     g.metadata->>'llm_strategy',
@@ -383,10 +573,11 @@ def get_property_purchases_by_strategy() -> pd.DataFrame:
                 ) as strategy,
                 e.payload->>'property_position' as property_position,
                 e.payload->>'property_name' as property_name,
-                (e.payload->>'price')::int as price
+                COALESCE((e.payload->>'price')::int, 0) as price
             FROM game_events e
             JOIN games g ON e.game_uuid = g.id
             JOIN players p ON p.game_uuid = g.id AND p.player_id = e.actor_player_id
+            LEFT JOIN llm_decision_info ldi ON ldi.game_uuid = p.game_uuid AND ldi.player_id = p.player_id
             WHERE e.event_type = 'property_purchased'
                 AND g.status = 'finished'
         )
@@ -407,7 +598,16 @@ def get_property_purchases_by_strategy() -> pd.DataFrame:
 def get_head_to_head_results() -> pd.DataFrame:
     """Get head-to-head win/loss results between agent types."""
     query = """
-        WITH game_results AS (
+        WITH llm_decision_info AS (
+            -- Get strategy from llm_decisions table (one per player per game)
+            SELECT DISTINCT ON (d.game_uuid, d.player_id)
+                d.game_uuid,
+                d.player_id,
+                d.strategy_description
+            FROM llm_decisions d
+            ORDER BY d.game_uuid, d.player_id, d.sequence_number DESC
+        ),
+        game_results AS (
             SELECT
                 g.id as game_uuid,
                 p.agent_type,
@@ -415,6 +615,7 @@ def get_head_to_head_results() -> pd.DataFrame:
                 CASE
                     WHEN p.agent_type = 'llm' THEN
                         COALESCE(
+                            ldi.strategy_description,
                             p.llm_strategy_profile->>'strategy',
                             g.config->>'llm_strategy',
                             'llm'
@@ -423,6 +624,7 @@ def get_head_to_head_results() -> pd.DataFrame:
                 END as agent_key
             FROM players p
             JOIN games g ON p.game_uuid = g.id
+            LEFT JOIN llm_decision_info ldi ON ldi.game_uuid = p.game_uuid AND ldi.player_id = p.player_id
             WHERE g.status = 'finished'
         )
         SELECT
@@ -518,3 +720,207 @@ def get_cash_timeline(game_id: str) -> pd.DataFrame:
         SELECT * FROM turn_events
     """
     return execute_query_df(query, (game_id,))
+
+
+# ============================================================================
+# Live Game Queries
+# ============================================================================
+
+def get_live_player_states(game_id: str) -> pd.DataFrame:
+    """
+    Get current player states for a live game by reconstructing from transaction events.
+
+    Reconstructs cash from: purchase (cash_after), rent_payment (payer_cash_after, owner_cash_after),
+    auction_end (winner_cash_after), pass_go (+200), tax_payment (-amount).
+
+    Returns DataFrame with columns: player_id, player_name, cash, position, position_name, is_bankrupt
+    """
+    query = """
+        WITH game_info AS (
+            SELECT id as game_uuid FROM games WHERE game_id = %s
+        ),
+        -- Get all players from the players table
+        base_players AS (
+            SELECT
+                p.player_id,
+                p.name as player_name,
+                p.agent_type,
+                p.is_bankrupt,
+                1500 as starting_cash
+            FROM players p
+            JOIN game_info gi ON p.game_uuid = gi.game_uuid
+        ),
+        -- Get latest position from 'land' or 'move' events
+        latest_positions AS (
+            SELECT DISTINCT ON (e.actor_player_id)
+                e.actor_player_id as player_id,
+                COALESCE(
+                    (e.payload->>'to_position')::int,
+                    (e.payload->>'position')::int
+                ) as position,
+                e.payload->>'space_name' as position_name
+            FROM game_events e
+            JOIN game_info gi ON e.game_uuid = gi.game_uuid
+            WHERE e.event_type IN ('land', 'move')
+                AND e.actor_player_id IS NOT NULL
+            ORDER BY e.actor_player_id, e.sequence_number DESC
+        ),
+        -- Check who is in jail (last go_to_jail without subsequent jail_release)
+        jail_status AS (
+            SELECT DISTINCT ON (player_id)
+                player_id,
+                in_jail
+            FROM (
+                SELECT
+                    (e.payload->>'player_id')::int as player_id,
+                    true as in_jail,
+                    e.sequence_number
+                FROM game_events e
+                JOIN game_info gi ON e.game_uuid = gi.game_uuid
+                WHERE e.event_type = 'go_to_jail'
+
+                UNION ALL
+
+                SELECT
+                    (e.payload->>'player_id')::int as player_id,
+                    false as in_jail,
+                    e.sequence_number
+                FROM game_events e
+                JOIN game_info gi ON e.game_uuid = gi.game_uuid
+                WHERE e.event_type = 'jail_release'
+            ) jail_events
+            ORDER BY player_id, sequence_number DESC
+        ),
+        -- Reconstruct cash from various event types
+        -- We need the LAST known cash value for each player
+        cash_events AS (
+            -- From purchase events (buyer's cash_after)
+            SELECT
+                (e.payload->>'player_id')::int as player_id,
+                (e.payload->>'cash_after')::int as cash,
+                e.sequence_number
+            FROM game_events e
+            JOIN game_info gi ON e.game_uuid = gi.game_uuid
+            WHERE e.event_type = 'purchase'
+                AND e.payload->>'cash_after' IS NOT NULL
+
+            UNION ALL
+
+            -- From rent_payment (payer's cash)
+            SELECT
+                (e.payload->>'payer_id')::int as player_id,
+                (e.payload->>'payer_cash_after')::int as cash,
+                e.sequence_number
+            FROM game_events e
+            JOIN game_info gi ON e.game_uuid = gi.game_uuid
+            WHERE e.event_type = 'rent_payment'
+                AND e.payload->>'payer_cash_after' IS NOT NULL
+                AND e.payload->>'payer_id' IS NOT NULL
+
+            UNION ALL
+
+            -- From rent_payment (owner's cash)
+            SELECT
+                COALESCE(
+                    (e.payload->>'owner_id')::int,
+                    -- If owner_id is null, try to find from property ownership
+                    (SELECT (e2.payload->>'player_id')::int
+                     FROM game_events e2
+                     WHERE e2.game_uuid = e.game_uuid
+                       AND e2.event_type = 'purchase'
+                       AND e2.payload->>'property_name' = e.payload->>'property_name'
+                     ORDER BY e2.sequence_number DESC LIMIT 1)
+                ) as player_id,
+                (e.payload->>'owner_cash_after')::int as cash,
+                e.sequence_number
+            FROM game_events e
+            JOIN game_info gi ON e.game_uuid = gi.game_uuid
+            WHERE e.event_type = 'rent_payment'
+                AND e.payload->>'owner_cash_after' IS NOT NULL
+
+            UNION ALL
+
+            -- From auction_end (winner's cash)
+            SELECT
+                (e.payload->>'winner_id')::int as player_id,
+                (e.payload->>'winner_cash_after')::int as cash,
+                e.sequence_number
+            FROM game_events e
+            JOIN game_info gi ON e.game_uuid = gi.game_uuid
+            WHERE e.event_type = 'auction_end'
+                AND e.payload->>'winner_cash_after' IS NOT NULL
+                AND e.payload->>'winner_id' IS NOT NULL
+        ),
+        latest_cash AS (
+            SELECT DISTINCT ON (player_id)
+                player_id,
+                cash
+            FROM cash_events
+            WHERE player_id IS NOT NULL
+            ORDER BY player_id, sequence_number DESC
+        )
+        SELECT
+            bp.player_id,
+            bp.player_name,
+            bp.agent_type,
+            COALESCE(lc.cash, bp.starting_cash) as cash,
+            COALESCE(lc.cash, bp.starting_cash) as net_worth,  -- Simplified, just cash for now
+            COALESCE(lp.position, 0) as position,
+            COALESCE(lp.position_name, 'GO') as position_name,
+            bp.is_bankrupt,
+            COALESCE(js.in_jail, false) as in_jail
+        FROM base_players bp
+        LEFT JOIN latest_cash lc ON bp.player_id = lc.player_id
+        LEFT JOIN latest_positions lp ON bp.player_id = lp.player_id
+        LEFT JOIN jail_status js ON bp.player_id = js.player_id
+        ORDER BY bp.player_id
+    """
+    return execute_query_df(query, (game_id,))
+
+
+def get_live_game_info(game_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get current game info including the actual current turn from events.
+
+    Returns dict with: game_id, status, started_at, current_turn, player_count
+    """
+    query = """
+        SELECT
+            g.game_id,
+            g.status,
+            g.started_at,
+            g.total_turns,
+            COALESCE(
+                (SELECT MAX(e.turn_number) FROM game_events e WHERE e.game_uuid = g.id),
+                0
+            ) as current_turn,
+            (SELECT COUNT(*) FROM players p WHERE p.game_uuid = g.id) as player_count
+        FROM games g
+        WHERE g.game_id = %s
+    """
+    results = execute_query(query, (game_id,))
+    return results[0] if results else None
+
+
+def get_active_games_with_turn() -> pd.DataFrame:
+    """Get currently running games with actual current turn from events."""
+    query = """
+        SELECT
+            g.game_id,
+            g.status,
+            g.started_at,
+            COALESCE(
+                (SELECT MAX(e.turn_number) FROM game_events e WHERE e.game_uuid = g.id),
+                0
+            ) as current_turn,
+            (SELECT COUNT(*) FROM players p WHERE p.game_uuid = g.id) as player_count,
+            (SELECT json_agg(json_build_object(
+                'player_id', p.player_id,
+                'name', p.name,
+                'agent_type', p.agent_type
+            )) FROM players p WHERE p.game_uuid = g.id) as players
+        FROM games g
+        WHERE g.status IN ('running', 'paused')
+        ORDER BY g.started_at DESC
+    """
+    return execute_query_df(query)

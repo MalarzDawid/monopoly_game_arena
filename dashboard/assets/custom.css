@@ -29,6 +29,20 @@ body {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
+/* Cards containing dropdowns should not transform (breaks z-index) */
+.card:has(.dash-dropdown),
+.card:has(.Select),
+.card.dropdown-card {
+    transform: none !important;
+    overflow: visible !important;
+}
+
+.card:has(.dash-dropdown):hover,
+.card:has(.Select):hover,
+.card.dropdown-card:hover {
+    transform: none !important;
+}
+
 .card-header {
     background-color: #1e293b;
     border-bottom: 1px solid #334155;
@@ -172,6 +186,17 @@ body {
 .dash-dropdown .Select-menu-outer {
     background-color: #1e293b;
     border-color: #334155;
+    z-index: 9999 !important;
+}
+
+/* Ensure dropdown is always on top */
+.Select-menu-outer {
+    z-index: 9999 !important;
+}
+
+.dash-dropdown {
+    position: relative;
+    z-index: 1000;
 }
 
 .dash-dropdown .Select-option {

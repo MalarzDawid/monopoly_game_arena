@@ -337,8 +337,11 @@ def update_heatmap(_):
         )
         return apply_dark_theme(fig)
 
-    # Create win rate matrix
-    df["win_rate_a"] = df["wins_a"] / df["total_games"] * 100
+    # Create win rate matrix (avoid division by zero)
+    df["win_rate_a"] = df.apply(
+        lambda row: (row["wins_a"] / row["total_games"] * 100) if row["total_games"] > 0 else 0,
+        axis=1
+    )
 
     return create_heatmap(
         df,
