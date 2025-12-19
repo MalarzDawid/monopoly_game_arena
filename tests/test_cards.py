@@ -3,10 +3,8 @@ Tests for Chance and Community Chest cards.
 """
 
 import pytest
-from monopoly.game import create_game
-from monopoly.player import Player
-from monopoly.config import GameConfig
-from monopoly.cards import Card, CardType
+from src.core import GameConfig, Player, create_game
+from src.core.game.cards import Card, CardType
 
 
 def test_card_move_to_pass_go():

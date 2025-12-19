@@ -3,9 +3,7 @@ Tests for building houses and hotels.
 """
 
 import pytest
-from monopoly.game import create_game
-from monopoly.player import Player
-from monopoly.config import GameConfig
+from src.core import GameConfig, Player, create_game
 
 
 def test_cannot_build_without_monopoly():

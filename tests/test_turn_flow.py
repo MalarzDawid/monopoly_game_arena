@@ -3,9 +3,7 @@ Tests for turn flow mechanics including doubles and jail.
 """
 
 import pytest
-from monopoly.game import create_game
-from monopoly.player import Player
-from monopoly.config import GameConfig
+from src.core import GameConfig, Player, create_game
 
 def test_basic_turn_flow():
     """Test basic turn progression."""

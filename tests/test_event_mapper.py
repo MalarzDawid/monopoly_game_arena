@@ -1,11 +1,10 @@
 import pytest
 
-from monopoly.config import GameConfig
-from monopoly.player import Player
-from monopoly.rules import Action, apply_action
-from monopoly.game import create_game, ActionType
+from src.core import GameConfig, Player, create_game
+from src.core.game.game import ActionType
+from src.core.game.rules import Action, apply_action
 
-from monopoly_game_arena.events.mapper import map_events
+from events.mapper import map_events
 
 
 def test_map_basic_roll_move_land_events():

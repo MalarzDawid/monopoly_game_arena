@@ -1,8 +1,6 @@
-from monopoly.config import GameConfig
-from monopoly.player import Player
-from monopoly.game import create_game
+from src.core import GameConfig, Player, create_game
 
-from monopoly_game_arena.snapshot import serialize_snapshot
+from snapshot import serialize_snapshot
 
 
 def test_basic_snapshot_structure():

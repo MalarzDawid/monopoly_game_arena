@@ -3,11 +3,9 @@ Tests for property auctions.
 """
 
 import pytest
-from monopoly.game import create_game
-from monopoly.player import Player
-from monopoly.config import GameConfig
-from monopoly.auction import Auction
-from monopoly.money import EventLog
+from src.core import GameConfig, Player, create_game
+from src.core.game.auction import Auction
+from src.core.game.money import EventLog
 
 
 def test_auction_creation():
