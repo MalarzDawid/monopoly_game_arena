@@ -8,7 +8,7 @@ Agents are AI players that automatically make decisions during Monopoly games. A
 |-------|-------------|----------|
 | `RandomAgent` | Makes random legal moves | Testing, baseline comparison |
 | `GreedyAgent` | Prefers buying and building | Simple competitive play |
-| `LLMAgent` | LLM‑powered decisions | Advanced AI research (stub) |
+| `LLMAgent` | LLM-powered strategic decisions | Advanced AI research, competitions |
 
 ### Agent Hierarchy
 
@@ -33,7 +33,12 @@ classDiagram
 
     class LLMAgent {
         +model_name: str
+        +strategy: str
+        +base_url: str
         +choose_action(game, legal_actions) Action
+        -_query_llm(prompt) str
+        -_build_prompt(game, actions) str
+        -_parse_response(response) Action
     }
 
     Agent <|-- RandomAgent
@@ -69,7 +74,7 @@ from monopoly.rules import get_legal_actions, apply_action
 agents = [
     GreedyAgent(0, "Alice"),
     RandomAgent(1, "Bob"),
-    GreedyAgent(2, "Charlie"),
+    LLMAgent(2, "Charlie", strategy="aggressive"),
 ]
 
 # Game loop
@@ -106,11 +111,29 @@ class MyCustomAgent(Agent):
 | Feature | RandomAgent | GreedyAgent | LLMAgent |
 |---------|-------------|-------------|----------|
 | Deterministic | No | Yes (seeded) | No |
-| Property buying | Random | Strategic | Context‑aware |
-| Building | Random | Prioritized | Reasoned |
-| Auctions | Random bids | Conservative | Adaptive |
+| Property buying | Random | Always buy | Context-aware |
+| Building | Random | Prioritized | Strategic |
+| Auctions | Random bids | Conservative | Adaptive (by strategy) |
 | Trading | Rejects all | Rejects all | Future |
 | Complexity | O(1) | O(n) | O(API call) |
+| Requires API | No | No | Yes (LLM backend) |
+
+### LLM Agent Configuration
+
+LLMAgent requires an LLM backend (Ollama, vLLM, or OpenAI-compatible API):
+
+```bash
+# Environment variables
+LLM_BASE_URL=http://localhost:11434/v1  # Ollama
+LLM_MODEL=gemma3:4b
+```
+
+Three strategy profiles available:
+- `aggressive` - Buy everything, bid high
+- `balanced` - Sustainable growth (default)
+- `defensive` - Conservative, high cash reserves
+
+See [LLMAgent documentation](llm.md) for details.
 
 ### Integration with Server
 
@@ -126,5 +149,29 @@ for i, role in enumerate(roles):
     elif role == "greedy":
         self.agents[i] = GreedyAgent(i, names[i])
     elif role == "llm":
-        self.agents[i] = LLMAgent(i, names[i])
+        self.agents[i] = LLMAgent(i, names[i], strategy=llm_strategy)
+```
+
+### Running Games with Different Agents
+
+#### CLI
+
+```bash
+# Greedy agents (default)
+uv run python play_monopoly.py --players 4 --agent greedy
+
+# Random agents
+uv run python play_monopoly.py --players 4 --agent random
+
+# LLM agents
+uv run python play_monopoly.py --players 4 --agent llm --llm-strategy balanced
+```
+
+#### Server API
+
+```bash
+# Create game with mixed agents
+curl -X POST http://localhost:8000/games \
+  -H "Content-Type: application/json" \
+  -d '{"players": 4, "roles": ["llm", "greedy", "greedy", "random"]}'
 ```

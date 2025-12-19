@@ -9,7 +9,7 @@ Provides:
 
 from .config import get_settings
 from .models import Base, Game, Player, GameEvent
-from .session import get_session, init_db, close_db, session_scope
+from .session import get_session, init_db, close_db, session_scope, create_tables, drop_tables, get_engine
 from .repository import GameRepository
 
 __all__ = [
@@ -22,5 +22,8 @@ __all__ = [
     "init_db",
     "close_db",
     "session_scope",
+    "create_tables",
+    "drop_tables",
+    "get_engine",
     "GameRepository",
 ]

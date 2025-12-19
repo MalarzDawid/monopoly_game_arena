@@ -5,6 +5,7 @@ Database management utility script.
 Usage:
     python scripts/db_manager.py init     # Initialize database
     python scripts/db_manager.py reset    # Drop and recreate tables (DEV ONLY!)
+    python scripts/db_manager.py clear    # Clear all data from tables (keeps structure)
     python scripts/db_manager.py test     # Test connection
     python scripts/db_manager.py stats    # Show database statistics
 """
@@ -60,6 +61,37 @@ async def reset():
     await create_tables()
     print("✅ Tables created")
 
+    await close_db()
+
+
+async def clear():
+    """Clear all data from tables (keeps table structure)."""
+    print("⚠️  WARNING: This will DELETE ALL DATA from all tables!")
+    print("   Tables to clear: game_events, llm_decisions, players, games")
+
+    # Check for --force flag
+    force = "--force" in sys.argv or "-f" in sys.argv
+
+    if not force:
+        response = input("Are you sure? Type 'yes' to continue (or use --force): ")
+        if response.lower() != "yes":
+            print("❌ Aborted")
+            return
+
+    await init_db()
+
+    async with session_scope() as session:
+        # Delete in correct order (foreign key constraints)
+        tables = ["game_events", "llm_decisions", "players", "games"]
+
+        for table in tables:
+            result = await session.execute(text(f"DELETE FROM {table}"))
+            count = result.rowcount
+            print(f"🗑️  Cleared {table}: {count} rows deleted")
+
+        await session.commit()
+
+    print("\n✅ All tables cleared successfully")
     await close_db()
 
 
@@ -186,6 +218,7 @@ async def main():
     commands = {
         "init": init,
         "reset": reset,
+        "clear": clear,
         "test": test,
         "stats": stats,
     }

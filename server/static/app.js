@@ -30,6 +30,45 @@ const boardNames = [
   'Chance','Park Place','Luxury Tax','Boardwalk'
 ];
 
+// Property color groups - maps position to color group
+// Standard Monopoly colors
+const propertyColors = {
+  // Brown (2 properties)
+  1: 'brown', 3: 'brown',
+  // Light Blue (3 properties)
+  6: 'light-blue', 8: 'light-blue', 9: 'light-blue',
+  // Pink/Magenta (3 properties)
+  11: 'pink', 13: 'pink', 14: 'pink',
+  // Orange (3 properties)
+  16: 'orange', 18: 'orange', 19: 'orange',
+  // Red (3 properties)
+  21: 'red', 23: 'red', 24: 'red',
+  // Yellow (3 properties)
+  26: 'yellow', 27: 'yellow', 29: 'yellow',
+  // Green (3 properties)
+  31: 'green', 32: 'green', 34: 'green',
+  // Dark Blue (2 properties)
+  37: 'dark-blue', 39: 'dark-blue',
+  // Railroads
+  5: 'railroad', 15: 'railroad', 25: 'railroad', 35: 'railroad',
+  // Utilities
+  12: 'utility', 28: 'utility',
+};
+
+// CSS color values for property groups
+const colorGroupCSS = {
+  'brown': '#8B4513',
+  'light-blue': '#87CEEB',
+  'pink': '#FF69B4',
+  'orange': '#FFA500',
+  'red': '#FF0000',
+  'yellow': '#FFD700',
+  'green': '#228B22',
+  'dark-blue': '#00008B',
+  'railroad': '#4a4a4a',
+  'utility': '#c0c0c0',
+};
+
 // Board coordinates map for positions 0..39 (11x11 grid)
 function positionToGrid(pos){
   const map = [];
@@ -47,6 +86,15 @@ function positionToGrid(pos){
   return map[pos];
 }
 
+// Determine color bar position based on board position
+function getColorBarPosition(pos) {
+  if (pos >= 1 && pos <= 9) return 'top';      // Bottom row - bar at top
+  if (pos >= 11 && pos <= 19) return 'right';  // Left side - bar at right
+  if (pos >= 21 && pos <= 29) return 'bottom'; // Top row - bar at bottom
+  if (pos >= 31 && pos <= 39) return 'left';   // Right side - bar at left
+  return null; // Corner
+}
+
 function renderBoard(snapshot){
   boardEl.innerHTML = '';
   api.state.posCells = {};
@@ -56,10 +104,11 @@ function renderBoard(snapshot){
       const cell = document.createElement('div');
       cell.className = 'cell';
       // find position that maps to this cell
-      let label = '', num = '';
+      let label = '', num = '', pos = -1;
       for(let p=0;p<40;p++){
         const [rr,cc] = positionToGrid(p);
         if(rr===r && cc===c){
+          pos = p;
           num = String(p);
           label = boardNames[p] || '';
           if([0,10,20,30].includes(p)) cell.classList.add('corner');
@@ -67,6 +116,28 @@ function renderBoard(snapshot){
           break;
         }
       }
+
+      // Add color bar for properties
+      if (pos >= 0 && propertyColors[pos]) {
+        const colorGroup = propertyColors[pos];
+        const barPos = getColorBarPosition(pos);
+        const colorBar = document.createElement('div');
+        colorBar.className = `color-bar color-bar-${barPos}`;
+        colorBar.style.backgroundColor = colorGroupCSS[colorGroup];
+        cell.appendChild(colorBar);
+        cell.classList.add('has-color');
+        cell.dataset.colorGroup = colorGroup;
+      }
+
+      // Add special class for corner and special spaces
+      if ([0].includes(pos)) cell.classList.add('go');
+      if ([10].includes(pos)) cell.classList.add('jail');
+      if ([20].includes(pos)) cell.classList.add('free-parking');
+      if ([30].includes(pos)) cell.classList.add('go-to-jail');
+      if ([2, 17, 33].includes(pos)) cell.classList.add('community-chest');
+      if ([7, 22, 36].includes(pos)) cell.classList.add('chance');
+      if ([4, 38].includes(pos)) cell.classList.add('tax');
+
       const numEl = document.createElement('div'); numEl.className = 'num'; numEl.textContent = num; cell.appendChild(numEl);
       const labelEl = document.createElement('div'); labelEl.className = 'label'; labelEl.textContent = label; cell.appendChild(labelEl);
       cell.style.gridRow = r+1;
@@ -109,6 +180,20 @@ function renderOwnership(snapshot){
       const cell = api.state.posCells[prop.position];
       if(cell){
         cell.style.boxShadow = `inset 0 0 0 3px ${color}`;
+        // Add house indicators if any
+        if (prop.houses > 0) {
+          let housesEl = cell.querySelector('.houses');
+          if (!housesEl) {
+            housesEl = document.createElement('div');
+            housesEl.className = 'houses';
+            cell.appendChild(housesEl);
+          }
+          if (prop.houses === 5) {
+            housesEl.innerHTML = '<span class="hotel">H</span>';
+          } else {
+            housesEl.innerHTML = '🏠'.repeat(prop.houses);
+          }
+        }
       }
     });
   });
@@ -140,6 +225,10 @@ function addEventLine(ev){
     txt = `▶️ Turn ${ev.turn_number} (${pidName(ev.player_id)})`;
   } else if(type==='go_to_jail'){
     txt = `🚔 ${pidName(ev.player_id)} to jail`;
+  } else if(type==='build_house'){
+    txt = `🏠 ${pidName(ev.player_id)} builds on ${ev.property_name}`;
+  } else if(type==='build_hotel'){
+    txt = `🏨 ${pidName(ev.player_id)} builds hotel on ${ev.property_name}`;
   }
   li.textContent = txt;
   // With column-reverse in CSS, appending puts newest visually at the top
@@ -163,7 +252,6 @@ async function fetchStatus(){
   const enable = !!api.state.gameId;
   pauseBtn.disabled = !enable;
   resumeBtn.disabled = !enable;
-  stepBtn.disabled = !enable;
 }
 
 // No actions in observer mode
@@ -183,7 +271,7 @@ function connectWS(){
         const li = document.createElement('li');
         const dot = document.createElement('span'); dot.className='dot'; dot.style.background = api.state.colors[idx % api.state.colors.length];
         li.appendChild(dot);
-        li.appendChild(document.createTextNode(` ${p.name} (#${p.player_id})`));
+        li.appendChild(document.createTextNode(` ${p.name} (#${p.player_id}) $${p.cash}`));
         playersEl.appendChild(li);
       });
       renderBoard(api.state.snapshot);

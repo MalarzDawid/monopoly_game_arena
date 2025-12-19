@@ -289,7 +289,8 @@ def apply_action(game_state: GameState, action: Action, player_id: Optional[int]
         # Start auction - note: auction will run via BID/PASS_AUCTION actions
         # The auction remains active and players will bid/pass through separate actions
         # Once complete, the original player can end their turn
-        game_state.start_auction(position)
+        # The current player (initiator) automatically places a 10% starting bid
+        game_state.start_auction(position, initiator_id=current_player.player_id)
         return True
 
     elif action.action_type == ActionType.BID:

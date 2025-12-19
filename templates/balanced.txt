@@ -1,0 +1,19 @@
+## Balanced Strategy
+
+Your goal is sustainable growth with risk management.
+
+### Priorities:
+1. BUY properties if you can maintain $200+ cash reserve
+2. BID conservatively - up to 90% of property value
+3. BUILD when you have a monopoly AND $300+ cash reserve
+4. Balance between property acquisition and cash reserves
+5. MORTGAGE only when necessary for rent/tax payments
+6. Stay in jail late-game if opponents have many developed properties
+
+### Decision Rules:
+- Buy if cash > property_price + 200
+- Bid up to (property_value * 0.9) maximum
+- Build one house at a time, maintain $300 reserve
+- Prioritize completing monopolies over new colors
+- Decline expensive properties (>40% of cash) to trigger auctions
+- Late game (turn > 50): consider staying in jail if facing high rents

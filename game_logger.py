@@ -8,7 +8,7 @@ import asyncio
 import json
 import os
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from events.mapper import map_events
 
@@ -33,6 +33,7 @@ class GameLogger:
         self.event_count = 0
         self._engine_last_idx = 0  # last flushed index from engine's internal EventLog
         self._db_enabled = game_id is not None
+        self._pending_db_events: List[Dict[str, Any]] = []  # Buffer for async DB writes
 
         # Create/clear log file
         with open(self.log_file, 'w') as f:
@@ -57,20 +58,28 @@ class GameLogger:
         with open(self.log_file, 'a') as f:
             f.write(json.dumps(event) + '\n')
 
-        # Write to database asynchronously (non-blocking)
+        # Buffer event for database write
         if self._db_enabled:
-            asyncio.create_task(self._log_event_to_db(event_type, event))
+            self._pending_db_events.append({
+                "event_type": event_type,
+                "event": event,
+            })
 
         self.event_count += 1
 
-    async def _log_event_to_db(self, event_type: str, event: Dict[str, Any]):
+    async def flush_to_db(self) -> int:
         """
-        Log event to database (async).
+        Flush all pending events to database.
 
-        Args:
-            event_type: Type of event
-            event: Full event data
+        Returns:
+            Number of events written to database
         """
+        if not self._db_enabled or not self._pending_db_events:
+            return 0
+
+        events_to_write = self._pending_db_events.copy()
+        self._pending_db_events.clear()
+
         try:
             from server.database import session_scope, GameRepository
 
@@ -80,26 +89,31 @@ class GameLogger:
                 # Get game UUID from game_id
                 game = await repo.get_game_by_id(self.game_id)
                 if not game:
-                    return
+                    return 0
 
-                # Extract turn number from event
-                turn_number = event.get("turn_number", 0)
+                # Prepare batch of events
+                batch_events = []
+                for item in events_to_write:
+                    event_type = item["event_type"]
+                    event = item["event"]
 
-                # Extract actor player_id if available
-                actor_player_id = event.get("player_id")
+                    batch_events.append({
+                        "sequence_number": event.get("event_id", 0),
+                        "turn_number": event.get("turn_number", 0),
+                        "event_type": event_type,
+                        "payload": event,
+                        "actor_player_id": event.get("player_id"),
+                    })
 
-                # Add event to database
-                await repo.add_event(
-                    game_uuid=game.id,
-                    sequence_number=event.get("event_id", self.event_count),
-                    turn_number=turn_number,
-                    event_type=event_type,
-                    payload=event,
-                    actor_player_id=actor_player_id,
-                )
+                # Write batch to database
+                if batch_events:
+                    await repo.add_events_batch(game.id, batch_events)
+
+                return len(batch_events)
         except Exception as e:
             # Don't crash game if DB logging fails
-            print(f"⚠️  Database logging failed: {e}")
+            print(f"[DB] Database logging failed: {e}")
+            return 0
 
     def flush_engine_events(self, game) -> int:
         """Flush new internal engine events to JSONL using EventMapper.
@@ -545,4 +559,52 @@ class GameLogger:
             in_jail=in_jail,
             jail_turns=jail_turns if in_jail else 0,
             net_worth=net_worth
+        )
+
+    def log_llm_decision(
+        self,
+        turn_number: int,
+        player_id: int,
+        player_name: str,
+        action_type: str,
+        params: dict,
+        reasoning: str,
+        used_fallback: bool,
+        processing_time_ms: int,
+        model_version: str,
+        strategy: str,
+        error: Optional[str] = None,
+        raw_response: Optional[str] = None,
+    ):
+        """
+        Log LLM agent decision.
+
+        Args:
+            turn_number: Current turn number
+            player_id: Player ID
+            player_name: Player name
+            action_type: Chosen action type
+            params: Action parameters
+            reasoning: LLM's rationale for the decision
+            used_fallback: Whether fallback was used
+            processing_time_ms: Time taken for decision
+            model_version: LLM model version
+            strategy: Strategy template used
+            error: Error message if any
+            raw_response: Raw LLM response for debugging
+        """
+        self.log_event(
+            "llm_decision",
+            turn_number=turn_number,
+            player_id=player_id,
+            player_name=player_name,
+            action_type=action_type,
+            params=params,
+            reasoning=reasoning,
+            used_fallback=used_fallback,
+            processing_time_ms=processing_time_ms,
+            model_version=model_version,
+            strategy=strategy,
+            error=error,
+            raw_response=raw_response[:500] if raw_response else None,  # Truncate for log
         )

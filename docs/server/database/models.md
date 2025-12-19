@@ -97,21 +97,31 @@ Records LLM agent decision context and reasoning:
 ```python
 from server.database.models import LLMDecision
 
-# Context
+# Identifiers
+decision.id               # UUID primary key
+decision.game_uuid        # Foreign key to Game
+decision.player_id        # Player who made decision (0, 1, 2, ...)
+decision.turn_number      # Game turn number
+decision.sequence_number  # Per-player decision sequence (1, 2, 3, ...)
+decision.timestamp        # When decision was made
+
+# Context snapshots
 decision.game_state       # JSONB full game state snapshot
-decision.player_state     # JSONB player's state
-decision.available_actions  # JSONB legal actions
+decision.player_state     # JSONB player's state at decision time
+decision.available_actions  # JSONB legal actions presented
 
 # LLM process
-decision.prompt           # Prompt sent to LLM
-decision.reasoning        # Step-by-step reasoning
-decision.chosen_action    # JSONB selected action
-decision.strategy_description  # Strategy explanation
+decision.prompt           # Full prompt sent to LLM
+decision.reasoning        # LLM's reasoning/rationale
+decision.chosen_action    # JSONB selected action with params
+decision.strategy_description  # Strategy profile used (aggressive/balanced/defensive)
 
-# Metadata
-decision.processing_time_ms  # Decision latency
-decision.model_version       # LLM model identifier
+# Performance
+decision.processing_time_ms  # Decision latency in milliseconds
+decision.model_version       # LLM model identifier (e.g., "gemma3:4b")
 ```
+
+**Note**: The unique constraint is on `(game_uuid, player_id, sequence_number)`, allowing each player to have their own independent decision sequence within a game.
 
 ### Indexes
 
@@ -125,7 +135,11 @@ Key indexes for query performance:
 | `game_events` | `(game_uuid, turn_number)` | Turn filtering |
 | `game_events` | `event_type, timestamp` | Event type queries |
 | `game_events` | `payload` (GIN) | JSONB queries |
+| `llm_decisions` | `(game_uuid, player_id, sequence_number)` (unique) | Per-player decision ordering |
+| `llm_decisions` | `(game_uuid, turn_number)` | Turn filtering |
+| `llm_decisions` | `(game_uuid, player_id)` | Player queries |
 | `llm_decisions` | `reasoning` (GIN) | Full‑text search |
+| `llm_decisions` | `strategy_description` (GIN) | Strategy search |
 
 ### Reference
 
