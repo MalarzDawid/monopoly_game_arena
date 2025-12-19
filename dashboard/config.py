@@ -25,6 +25,8 @@ DASHBOARD_DEBUG = os.getenv("DASHBOARD_DEBUG", "true").lower() == "true"
 
 # Main server URL (for API calls)
 MAIN_SERVER_URL = os.getenv("MAIN_SERVER_URL", "http://localhost:8000")
+# API base for dashboard data (can be same as MAIN_SERVER_URL)
+API_BASE_URL = os.getenv("API_BASE_URL", MAIN_SERVER_URL)
 
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent

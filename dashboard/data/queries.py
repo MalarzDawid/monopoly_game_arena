@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+import httpx
 import pandas as pd
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -17,6 +18,9 @@ from psycopg2.extras import RealDictCursor
 from dashboard.config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
+
+# API client
+from dashboard.data.api import fetch_json
 
 
 @contextmanager
@@ -62,7 +66,19 @@ def get_all_games(
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
 ) -> pd.DataFrame:
-    """Get all games with optional filtering."""
+    """Get all games with optional filtering (API-first, DB fallback)."""
+    data = fetch_json(
+        "/api/games",
+        params={"limit": limit, "offset": offset, "status": status},
+    )
+    if data and "games" in data:
+        df = pd.DataFrame(data["games"])
+        if date_from:
+            df = df[df["created_at"] >= pd.to_datetime(date_from)]
+        if date_to:
+            df = df[df["created_at"] <= pd.to_datetime(date_to)]
+        return df
+
     query = """
         SELECT
             g.id,
@@ -99,7 +115,11 @@ def get_all_games(
 
 
 def get_game_by_id(game_id: str) -> Optional[Dict[str, Any]]:
-    """Get a single game by its game_id."""
+    """Get a single game by its game_id (API-first, DB fallback)."""
+    data = fetch_json(f"/api/games/{game_id}/history")
+    if data and "game" in data:
+        return data["game"]
+
     query = """
         SELECT
             g.id,
@@ -147,7 +167,18 @@ def get_game_events(
     turn_number: Optional[int] = None,
     limit: int = 1000,
 ) -> pd.DataFrame:
-    """Get events for a game."""
+    """Get events for a game (API-first, DB fallback)."""
+    data = fetch_json(f"/api/games/{game_id}/history")
+    if data and "events" in data:
+        df = pd.DataFrame(data["events"])
+        if event_types:
+            df = df[df["event_type"].isin(event_types)]
+        if turn_number is not None:
+            df = df[df["turn_number"] == turn_number]
+        if limit:
+            df = df.head(limit)
+        return df
+
     query = """
         SELECT
             e.sequence_number,
@@ -177,7 +208,14 @@ def get_game_events(
 
 
 def get_latest_game_events(game_id: str, limit: int = 10) -> pd.DataFrame:
-    """Get the most recent events for a game (newest first)."""
+    """Get the most recent events for a game (newest first) via API history."""
+    data = fetch_json(f"/api/games/{game_id}/history")
+    if data and "events" in data:
+        df = pd.DataFrame(data["events"])
+        if df.empty:
+            return df
+        df = df.sort_values("sequence_number", ascending=False).head(limit)
+        return df
     query = """
         SELECT
             e.sequence_number,
@@ -371,7 +409,25 @@ def get_active_games() -> pd.DataFrame:
 # ============================================================================
 
 def get_games_summary() -> Dict[str, Any]:
-    """Get overall games summary statistics."""
+    """Get overall games summary statistics (API-first, DB fallback)."""
+    data = fetch_json("/api/games", params={"limit": 100, "offset": 0})
+    if data and "games" in data:
+        df = pd.DataFrame(data["games"])
+        total_games = len(df)
+        finished_games = len(df[df["status"] == "finished"])
+        running_games = len(df[df["status"] == "running"])
+        avg_turns = df[df["status"] == "finished"]["total_turns"].mean()
+        first_game = pd.to_datetime(df["created_at"]).min() if not df.empty else None
+        last_game = pd.to_datetime(df["created_at"]).max() if not df.empty else None
+        return {
+            "total_games": total_games,
+            "finished_games": finished_games,
+            "running_games": running_games,
+            "avg_turns": avg_turns,
+            "first_game": first_game,
+            "last_game": last_game,
+        }
+
     query = """
         SELECT
             COUNT(*) as total_games,
@@ -390,11 +446,27 @@ def get_games_timeline(
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
 ) -> pd.DataFrame:
-    """Get games count by date for timeline chart."""
+    """Get games count by date for timeline chart (API-first, DB fallback)."""
     if not date_from:
         date_from = datetime.now() - timedelta(days=30)
     if not date_to:
         date_to = datetime.now()
+
+    data = fetch_json("/api/games", params={"limit": 5000, "offset": 0})
+    if data and "games" in data:
+        df = pd.DataFrame(data["games"])
+        if df.empty:
+            return pd.DataFrame()
+        df["date"] = pd.to_datetime(df["created_at"]).dt.date
+        mask = (df["created_at"] >= pd.to_datetime(date_from)) & (df["created_at"] <= pd.to_datetime(date_to))
+        df = df[mask]
+        grouped = df.groupby("date").agg(
+            games_count=("game_id", "count"),
+            avg_turns=("total_turns", "mean"),
+        )
+        grouped = grouped.reset_index()
+        grouped["llm_games_count"] = 0  # Placeholder; API lacks agent breakdown
+        return grouped
 
     query = """
         SELECT
@@ -413,7 +485,10 @@ def get_games_timeline(
 
 
 def get_win_rates_by_agent_type() -> pd.DataFrame:
-    """Get win rates grouped by agent type."""
+    """Get win rates grouped by agent type (DB fallback)."""
+    data = fetch_json("/api/dashboard/win_rates/agents")
+    if data:
+        return pd.DataFrame(data)
     query = """
         SELECT
             p.agent_type,

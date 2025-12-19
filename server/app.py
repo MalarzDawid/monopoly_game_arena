@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .registry import GameRegistry
+from .dashboard_api import router as dashboard_router
 from snapshot import serialize_snapshot
 from src.data import init_db, close_db, get_session, GameRepository
 from src.services import GameService
@@ -48,6 +49,7 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan
 )
+app.include_router(dashboard_router)
 registry = GameRegistry()
 
 

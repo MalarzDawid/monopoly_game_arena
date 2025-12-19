@@ -9,15 +9,16 @@ Usage:
     # or
     python dashboard/app.py
 
-Dashboard will be available at http://localhost:8050
+Default port: 8050 (override with DASHBOARD_PORT env var)
 """
 
 import dash
-from dash import dcc, html, Input, Output, callback
+from dash import Input, Output, callback, dcc, html
 import dash_bootstrap_components as dbc
 
+from dashboard import config
 from dashboard.components.navbar import create_navbar
-from dashboard.pages import overview, llm_ranking, game_detail, strategy_analysis, live
+from dashboard.pages import game_detail, live, llm_ranking, overview, strategy_analysis
 
 # Initialize the Dash app with Bootstrap dark theme
 app = dash.Dash(
@@ -128,7 +129,7 @@ def main():
     print("  MONOPOLY GAME ARENA DASHBOARD")
     print("=" * 60)
     print("\n  Starting dashboard server...")
-    print("  Dashboard URL: http://localhost:8050")
+    print(f"  Dashboard URL: http://{config.DASHBOARD_HOST}:{config.DASHBOARD_PORT}")
     print("\n  Pages:")
     print("    /          - Games Overview")
     print("    /ranking   - LLM Rankings")
@@ -139,9 +140,9 @@ def main():
     print("=" * 60 + "\n")
 
     app.run(
-        debug=True,
-        host="0.0.0.0",
-        port=8050,
+        debug=config.DASHBOARD_DEBUG,
+        host=config.DASHBOARD_HOST,
+        port=config.DASHBOARD_PORT,
     )
 
 
