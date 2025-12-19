@@ -288,4 +288,9 @@ def map_events(board: Board, events: Iterable[GameEvent], *, player_positions: O
         player_positions: optional snapshot of player positions for enrichment
     """
     positions = player_positions or {}
-    return [map_event(board, ev, player_positions=positions) for ev in events]
+    mapped: List[Dict[str, Any]] = []
+    for idx, ev in enumerate(events):
+        mev = map_event(board, ev, player_positions=positions)
+        mev["seq"] = idx
+        mapped.append(mev)
+    return mapped

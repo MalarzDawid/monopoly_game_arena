@@ -43,7 +43,8 @@ class GameRunner:
         self.game = game
         self.agent_type = agent_type
         self.llm_strategy = llm_strategy
-        self.logger = GameLogger(game_id=game_id)  # Pass game_id for DB logging
+        # DB persistence handled via GameService; logger only writes JSONL
+        self.logger = GameLogger(game_id=None)
         self._task: Optional[asyncio.Task] = None
         self._stop = asyncio.Event()
         self._clients: Set[asyncio.Queue] = set()  # each client gets a queue of outbound messages
@@ -172,8 +173,8 @@ class GameRunner:
     async def _run_loop(self) -> None:
         # Main loop; conservative sleep to avoid tight CPU usage
         while not self.game.game_over and not self._stop.is_set():
-        # Flush internal events to JSONL and broadcast them
-        await self.flush_and_broadcast()
+            # Flush internal events to JSONL and broadcast them
+            await self.flush_and_broadcast()
 
             # Honor pause flag globally
             if self._paused:
@@ -308,6 +309,8 @@ class GameRunner:
     async def flush_and_broadcast(self) -> None:
         # Broadcast mapped events generated since last flush
         evs = self.game.event_log.events
+        start_index = self._last_engine_idx
+        mapped: List[Dict[str, Any]] = []
         if self._last_engine_idx < len(evs):
             slice_ = evs[self._last_engine_idx:]
             # Record turn start indices for querying per turn later
@@ -346,19 +349,22 @@ class GameRunner:
                 async with session_scope() as session:
                     repo = self._game_repo or GameRepository(session)
                     service = GameService(repo)
-                    await service.persist_events(
-                        self._game_uuid,
-                        [
+                    batch = []
+                    for idx, e in enumerate(mapped):
+                        seq = start_index + idx
+                        turn_num = e.get("turn_number", self.game.turn_number)
+                        payload = {k: v for k, v in e.items() if k not in {"event_type", "seq"}}
+                        batch.append(
                             {
-                                "sequence_number": e["seq"],
-                                "turn_number": e["turn"],
+                                "sequence_number": seq,
+                                "turn_number": turn_num,
                                 "event_type": e["event_type"],
-                                "payload": e["payload"],
+                                "payload": payload,
                                 "actor_player_id": e.get("player_id"),
                             }
-                            for e in mapped
-                        ],
-                    )
+                        )
+                    if batch:
+                        await service.persist_events(self._game_uuid, batch)
             except Exception as e:
                 logger.warning(f"Failed to persist events to DB: {e}")
 
