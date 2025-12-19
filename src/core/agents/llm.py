@@ -89,13 +89,12 @@ class LLMAgent(Agent):
         self.strategy = strategy if strategy in self.STRATEGIES else "balanced"
         self.base_url = base_url or DEFAULT_LLM_BASE_URL
         self.decision_callback = decision_callback
+        # Allow injected client; fallback to lazy creation
+        self._client: Optional[httpx.Client] = None
 
         # Load templates
         self._system_prompt = self._load_template("system_prompt.txt")
         self._strategy_prompt = self._load_template(f"{self.strategy}.txt")
-
-        # HTTP client for vLLM
-        self._client = httpx.Client(timeout=LLM_TIMEOUT_SECONDS)
 
         # Decision counter for sequence numbers
         self._decision_count = 0
@@ -360,7 +359,8 @@ class LLMAgent(Agent):
             "stop": ["\n\n", "```"],
         }
 
-        response = self._client.post(url, json=payload)
+        client = self._client or httpx.Client(timeout=LLM_TIMEOUT_SECONDS)
+        response = client.post(url, json=payload, timeout=LLM_TIMEOUT_SECONDS)
         response.raise_for_status()
 
         result = response.json()
