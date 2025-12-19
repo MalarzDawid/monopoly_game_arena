@@ -18,8 +18,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-# Add project root to sys.path for imports
-project_root = Path(__file__).resolve().parents[1]
+# Add project root to sys.path for imports (env.py is at src/data/migrations)
+project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
@@ -37,11 +37,11 @@ def load_module_from_file(module_name: str, file_path: Path):
 # Load database modules directly
 config_module = load_module_from_file(
     "db_config",
-    project_root / "server" / "database" / "config.py"
+    project_root / "src" / "data" / "config.py"
 )
 models_module = load_module_from_file(
     "db_models",
-    project_root / "server" / "database" / "models.py"
+    project_root / "src" / "data" / "models.py"
 )
 
 get_settings = config_module.get_settings

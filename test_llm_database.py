@@ -15,14 +15,17 @@ import logging
 from datetime import datetime
 from typing import Dict, Any
 
-from server.database import init_db, close_db, session_scope, GameRepository
-from server.database.models import Game, Player, LLMDecision
+import pytest
+
+from src.data import init_db, close_db, session_scope, GameRepository
+from src.data.models import Game, Player, LLMDecision
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.asyncio
 async def test_llm_functionality():
     """Test LLM-related database functionality."""
     logger.info("🚀 Starting LLM database test...")

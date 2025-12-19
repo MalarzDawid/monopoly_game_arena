@@ -13,6 +13,7 @@ NC := \033[0m # No Color
 # Project paths
 PROJECT_DIR := $(shell pwd)
 export PYTHONPATH := $(PROJECT_DIR):$(PYTHONPATH)
+ALEMBIC := PYTHONPATH=$(PROJECT_DIR) UV_CACHE_DIR=.uv-cache uv run alembic
 
 help: ## Show this help message
 	@echo "$(BLUE)Monopoly Game Arena - Makefile Commands$(NC)"
@@ -86,7 +87,7 @@ db-psql: ## Connect to PostgreSQL CLI
 
 db-migrate: ## Apply database migrations (alembic upgrade head)
 	@echo "$(BLUE)🔄 Applying migrations...$(NC)"
-	uv run alembic upgrade head
+	$(ALEMBIC) upgrade head
 	@echo "$(GREEN)✅ Migrations applied$(NC)"
 
 db-create-migration: ## Create new migration (usage: make db-create-migration MSG="your message")
@@ -96,21 +97,21 @@ db-create-migration: ## Create new migration (usage: make db-create-migration MS
 		exit 1; \
 	fi
 	@echo "$(BLUE)📝 Creating migration: $(MSG)$(NC)"
-	uv run alembic revision --autogenerate -m "$(MSG)"
+	$(ALEMBIC) revision --autogenerate -m "$(MSG)"
 	@echo "$(GREEN)✅ Migration created$(NC)"
 
 db-downgrade: ## Rollback last migration
 	@echo "$(BLUE)⏪ Rolling back migration...$(NC)"
-	uv run alembic downgrade -1
+	$(ALEMBIC) downgrade -1
 	@echo "$(GREEN)✅ Migration rolled back$(NC)"
 
 db-current: ## Show current migration version
 	@echo "$(BLUE)📊 Current migration version:$(NC)"
-	uv run alembic current
+	$(ALEMBIC) current
 
 db-history: ## Show migration history
 	@echo "$(BLUE)📜 Migration history:$(NC)"
-	uv run alembic history --verbose
+	$(ALEMBIC) history --verbose
 
 db-init: ## Initialize database (create tables)
 	@echo "$(BLUE)🔧 Initializing database...$(NC)"
@@ -287,7 +288,7 @@ status: ## Show status of all services
 	@docker-compose ps 2>/dev/null || echo "  Not running"
 	@echo ""
 	@echo "$(YELLOW)Database Migration:$(NC)"
-	@uv run alembic current 2>/dev/null || echo "  Not initialized"
+	@$(ALEMBIC) current 2>/dev/null || echo "  Not initialized"
 	@echo ""
 
 # ============================================================================
@@ -322,7 +323,7 @@ check: lint format-check type-check test ## Run all checks (lint, format, type, 
 
 check-imports: ## Quick check if Python imports work
 	@echo "$(BLUE)🔍 Checking imports...$(NC)"
-	@uv run python -c "from server.database import Game, Player, GameEvent; print('✅ Database models OK')"
+	@uv run python -c "from src.data import Game, Player, GameEvent; print('✅ Database models OK')"
 	@uv run python -c "from server.app import app; print('✅ FastAPI app OK')"
 	@echo "$(GREEN)✅ All imports working!$(NC)"
 
