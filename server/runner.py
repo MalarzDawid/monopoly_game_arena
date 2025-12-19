@@ -115,7 +115,7 @@ class GameRunner:
         # Mark game as running in the database and fetch game_uuid
         try:
             async with session_scope() as session:
-                repo = GameRepository(session)
+                repo = self._game_repo or GameRepository(session)
                 # Fetch game to get UUID for LLM decision logging
                 db_game = await repo.get_game_by_id(self.game_id)
                 if db_game:
@@ -258,7 +258,7 @@ class GameRunner:
         # Update final status and results in DB (best-effort)
         try:
             async with session_scope() as session:
-                repo = GameRepository(session)
+                repo = self._game_repo or GameRepository(session)
                 db_game = await repo.get_game_by_id(self.game_id)
                 if db_game:
                     # Update game status and metadata
