@@ -74,7 +74,7 @@ class GameRunner:
         if len(roles) < len(names):
             roles = roles + [agent_type] * (len(names) - len(roles))
         self.roles: List[str] = roles
-        self.agents: List[Optional[object]] = agents
+        self.agents: List[Optional[object]] = agents if agents is not None else [None] * len(names)
 
         # Create LLM callback that queues decisions for DB persistence
         def llm_decision_callback(decision_data: Dict[str, Any]) -> None:
@@ -97,17 +97,17 @@ class GameRunner:
             # Queue for database persistence
             self._pending_llm_decisions.append(decision_data)
 
-        # Prepare agents for non-human players
-        self.agents: List[Optional[object]] = [None] * len(names)
-        for i, role in enumerate(self.roles):
-            if role == "human":
-                self.agents[i] = None
-            elif role == "random":
-                self.agents[i] = RandomAgent(i, names[i])
-            elif role == "llm":
-                self.agents[i] = LLMAgent(i, names[i], strategy=self.llm_strategy, decision_callback=llm_decision_callback)
-            else:
-                self.agents[i] = GreedyAgent(i, names[i])
+        # Prepare agents for non-human players if not provided
+        if agents is None:
+            for i, role in enumerate(self.roles):
+                if role == "human":
+                    self.agents[i] = None
+                elif role == "random":
+                    self.agents[i] = RandomAgent(i, names[i])
+                elif role == "llm":
+                    self.agents[i] = LLMAgent(i, names[i], strategy=self.llm_strategy, decision_callback=llm_decision_callback)
+                else:
+                    self.agents[i] = GreedyAgent(i, names[i])
 
     async def start(self) -> None:
         # Flush initial GAME_START and TURN_START
@@ -126,6 +126,12 @@ class GameRunner:
                     status="running",
                     started_at=datetime.now(timezone.utc),
                 )
+                if self._game_service:
+                    await self._game_service.update_status(
+                        game_id=self.game_id,
+                        status="running",
+                        started_at=datetime.now(timezone.utc),
+                    )
         except Exception as e:
             # Non-fatal; continue even if DB update fails
             logger.warning(f"Failed to fetch game UUID or update status: {e}")
@@ -166,8 +172,8 @@ class GameRunner:
     async def _run_loop(self) -> None:
         # Main loop; conservative sleep to avoid tight CPU usage
         while not self.game.game_over and not self._stop.is_set():
-            # Flush internal events to JSONL and broadcast them
-            await self.flush_and_broadcast()
+        # Flush internal events to JSONL and broadcast them
+        await self.flush_and_broadcast()
 
             # Honor pause flag globally
             if self._paused:
@@ -252,18 +258,16 @@ class GameRunner:
         # Final flush and broadcast end state
         await self.flush_and_broadcast()
 
-        # Ensure all events are persisted to database before updating status
-        await self.logger.flush_to_db()
-
         # Update final status and results in DB (best-effort)
         try:
             async with session_scope() as session:
                 repo = self._game_repo or GameRepository(session)
+                service = GameService(repo)
                 db_game = await repo.get_game_by_id(self.game_id)
                 if db_game:
                     # Update game status and metadata
                     status = "finished" if self.game.game_over else "stopped"
-                    await repo.update_game_status(
+                    await service.update_status(
                         game_id=self.game_id,
                         status=status,
                         finished_at=datetime.now(timezone.utc),
@@ -337,7 +341,26 @@ class GameRunner:
         self.logger.flush_engine_events(self.game)
 
         # Persist pending events to database
-        await self.logger.flush_to_db()
+        if mapped and self._game_uuid:
+            try:
+                async with session_scope() as session:
+                    repo = self._game_repo or GameRepository(session)
+                    service = GameService(repo)
+                    await service.persist_events(
+                        self._game_uuid,
+                        [
+                            {
+                                "sequence_number": e["seq"],
+                                "turn_number": e["turn"],
+                                "event_type": e["event_type"],
+                                "payload": e["payload"],
+                                "actor_player_id": e.get("player_id"),
+                            }
+                            for e in mapped
+                        ],
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to persist events to DB: {e}")
 
         # Persist pending LLM decisions to database
         await self._flush_llm_decisions()
@@ -352,24 +375,9 @@ class GameRunner:
 
         try:
             async with session_scope() as session:
-                repo = GameRepository(session)
-                for decision_data in decisions_to_save:
-                    await repo.add_llm_decision(
-                        game_uuid=self._game_uuid,
-                        player_id=decision_data["player_id"],
-                        turn_number=decision_data["turn_number"],
-                        sequence_number=decision_data["sequence_number"],
-                        game_state=decision_data["game_state"],
-                        player_state=decision_data["player_state"],
-                        available_actions=decision_data["available_actions"],
-                        prompt=decision_data["prompt"],
-                        reasoning=decision_data["reasoning"] or "",
-                        chosen_action=decision_data["chosen_action"],
-                        strategy_description=decision_data.get("strategy"),
-                        processing_time_ms=decision_data.get("processing_time_ms"),
-                        model_version=decision_data.get("model_version"),
-                    )
-                logger.debug(f"Saved {len(decisions_to_save)} LLM decisions to database")
+                repo = self._game_repo or GameRepository(session)
+                service = GameService(repo)
+                await service.persist_llm_decisions(self._game_uuid, decisions_to_save)
         except Exception as e:
             logger.error(f"Failed to save LLM decisions to database: {e}")
             # Re-queue failed decisions for retry
