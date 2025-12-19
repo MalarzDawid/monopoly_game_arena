@@ -5,9 +5,10 @@ import uuid
 from typing import Dict, Optional
 
 from src.core import GameConfig, Player, create_game
+from src.data import GameRepository, session_scope
+from src.services import GameService
 
 from .runner import GameRunner
-from src.data import session_scope, GameRepository
 
 
 class GameRegistry:
@@ -30,43 +31,30 @@ class GameRegistry:
     ) -> str:
         game_id = uuid.uuid4().hex[:12]
 
-        players = [Player(i, name) for i, name in enumerate(self._default_names(num_players))]
-        # Default roles: all agents (observer mode)
-        if roles is None:
-            roles = [agent] * num_players
-        config = GameConfig(seed=seed, time_limit_turns=max_turns)
-        game = create_game(config, players)
-
-        # Save game to database
         async with session_scope() as session:
             repo = GameRepository(session)
-            db_game = await repo.create_game(
-                game_id=game_id,
-                config={
-                    "seed": seed,
-                    "max_turns": max_turns,
-                    "num_players": num_players,
-                    "agent": agent,
-                    "roles": roles,
-                    "tick_ms": tick_ms,
-                },
-                metadata={
-                    "created_by": "api",
-                    "game_type": "simulation",
-                }
+            service = GameService(repo)
+            gid, game, agents = await service.create_game(
+                num_players=num_players,
+                agent=agent,
+                seed=seed,
+                max_turns=max_turns,
+                roles=roles,
+                tick_ms=tick_ms,
+                llm_strategy=llm_strategy,
             )
-
-            # Add players to database
-            for i, player in enumerate(players):
-                agent_type = roles[i] if roles else agent
-                await repo.add_player(
-                    game_uuid=db_game.id,
-                    player_id=i,
-                    name=player.name,
-                    agent_type=agent_type,
-                )
-
-        runner = GameRunner(game_id=game_id, game=game, agent_type=agent, roles=roles, tick_ms=tick_ms, llm_strategy=llm_strategy)
+            game_id = gid
+            runner = GameRunner(
+                game_id=game_id,
+                game=game,
+                agents=agents,
+                agent_type=agent,
+                roles=roles,
+                tick_ms=tick_ms,
+                llm_strategy=llm_strategy,
+                game_repo=repo,
+                game_service=service,
+            )
         async with self._lock:
             self._games[game_id] = runner
 

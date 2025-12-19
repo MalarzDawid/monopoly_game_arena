@@ -6,14 +6,14 @@ import uuid
 from typing import Any, Dict, List, Optional, Set
 from datetime import datetime, timezone
 
-from src.core.game.rules import apply_action, get_legal_actions
 from src.core.game.game import ActionType, GameState
+from src.core.game.rules import apply_action, get_legal_actions
+from src.services import GameService
 from game_logger import GameLogger
 from events.mapper import map_events
 from snapshot import serialize_snapshot
-from src.data import session_scope, GameRepository
-
 from src.core.agents import GreedyAgent, LLMAgent, RandomAgent
+from src.data import GameRepository, session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,18 @@ class GameRunner:
     - Broadcast mapped events to subscribed WebSocket clients
     """
 
-    def __init__(self, game_id: str, game: GameState, agent_type: str = "greedy", roles: Optional[List[str]] = None, tick_ms: Optional[int] = 500, llm_strategy: str = "balanced"):
+    def __init__(
+        self,
+        game_id: str,
+        game: GameState,
+        agents: List[Optional[object]],
+        agent_type: str = "greedy",
+        roles: Optional[List[str]] = None,
+        tick_ms: Optional[int] = 500,
+        llm_strategy: str = "balanced",
+        game_repo: Optional[GameRepository] = None,
+        game_service: Optional[GameService] = None,
+    ):
         self.game_id = game_id
         self.game = game
         self.agent_type = agent_type
@@ -50,6 +61,8 @@ class GameRunner:
 
         # Queue for pending LLM decisions to be saved to database
         self._pending_llm_decisions: List[Dict[str, Any]] = []
+        self._game_repo = game_repo
+        self._game_service = game_service
 
         # Agents list (one per player)
         names = [self.game.players[i].name for i in sorted(self.game.players)]
@@ -61,6 +74,7 @@ class GameRunner:
         if len(roles) < len(names):
             roles = roles + [agent_type] * (len(names) - len(roles))
         self.roles: List[str] = roles
+        self.agents: List[Optional[object]] = agents
 
         # Create LLM callback that queues decisions for DB persistence
         def llm_decision_callback(decision_data: Dict[str, Any]) -> None:
