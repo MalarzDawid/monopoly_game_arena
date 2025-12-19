@@ -9,7 +9,7 @@ from monopoly.player import Player
 from monopoly.game import create_game
 
 from .runner import GameRunner
-from server.database import session_scope, GameRepository
+from src.data import session_scope, GameRepository
 
 
 class GameRegistry:

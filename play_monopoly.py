@@ -130,7 +130,7 @@ async def simulate_game(
 
     if save_to_db:
         try:
-            from server.database import init_db, close_db, session_scope, GameRepository
+            from src.data import init_db, close_db, session_scope, GameRepository
             await init_db()
             db_initialized = True
 
@@ -367,7 +367,7 @@ async def simulate_game(
     # Update game status in database
     if db_initialized and game_id:
         try:
-            from server.database import session_scope, GameRepository, close_db
+            from src.data import session_scope, GameRepository, close_db
 
             async with session_scope() as session:
                 repo = GameRepository(session)

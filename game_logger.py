@@ -81,7 +81,7 @@ class GameLogger:
         self._pending_db_events.clear()
 
         try:
-            from server.database import session_scope, GameRepository
+            from src.data import session_scope, GameRepository
 
             async with session_scope() as session:
                 repo = GameRepository(session)

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .registry import GameRegistry
 from snapshot import serialize_snapshot
-from server.database import init_db, close_db, get_session, GameRepository
+from src.data import init_db, close_db, get_session, GameRepository
 
 
 @asynccontextmanager

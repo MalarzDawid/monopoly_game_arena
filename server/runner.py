@@ -11,7 +11,7 @@ from monopoly.game import GameState
 from game_logger import GameLogger
 from events.mapper import map_events
 from snapshot import serialize_snapshot
-from server.database import session_scope, GameRepository
+from src.data import session_scope, GameRepository
 
 from monopoly.game import ActionType
 from agents import GreedyAgent, RandomAgent, LLMAgent

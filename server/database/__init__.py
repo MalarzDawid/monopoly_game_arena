@@ -1,16 +1,26 @@
 """
-Database layer for Monopoly Game Arena.
+Deprecated compatibility shim for the database layer.
 
-Provides:
-- SQLAlchemy models (Game, Player, GameEvent)
-- Async session management
-- Repository pattern for database operations
+All database code now lives in `src.data`. This module re-exports the
+new locations so existing imports keep working during the transition.
 """
 
-from .config import get_settings
-from .models import Base, Game, Player, GameEvent
-from .session import get_session, init_db, close_db, session_scope, create_tables, drop_tables, get_engine
-from .repository import GameRepository
+from src.data import (  # noqa: F401
+    Base,
+    Game,
+    GameEvent,
+    GameRepository,
+    LLMDecision,
+    Player,
+    close_db,
+    create_tables,
+    drop_tables,
+    get_engine,
+    get_session,
+    get_settings,
+    init_db,
+    session_scope,
+)
 
 __all__ = [
     "get_settings",
@@ -18,6 +28,7 @@ __all__ = [
     "Game",
     "Player",
     "GameEvent",
+    "LLMDecision",
     "get_session",
     "init_db",
     "close_db",

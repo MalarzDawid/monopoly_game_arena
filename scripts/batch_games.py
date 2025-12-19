@@ -67,7 +67,7 @@ def _save_game_to_db(
 ) -> bool:
     """Save complete game to database (create, events, finalize). Returns success."""
     async def _save():
-        from server.database import init_db, close_db, session_scope, GameRepository
+        from src.data import init_db, close_db, session_scope, GameRepository
         import uuid as uuid_module
 
         await init_db()
