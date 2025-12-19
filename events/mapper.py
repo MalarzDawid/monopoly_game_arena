@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Optional
 
-from monopoly.board import Board
-from monopoly.money import EventType, GameEvent
+from src.core.game.board import Board
+from src.core.game.money import EventType, GameEvent
 
 
 def _flatten_details(details: Dict[str, Any]) -> Dict[str, Any]:

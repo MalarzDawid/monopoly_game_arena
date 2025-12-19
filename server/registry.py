@@ -4,9 +4,7 @@ import asyncio
 import uuid
 from typing import Dict, Optional
 
-from monopoly.config import GameConfig
-from monopoly.player import Player
-from monopoly.game import create_game
+from src.core import GameConfig, Player, create_game
 
 from .runner import GameRunner
 from src.data import session_scope, GameRepository

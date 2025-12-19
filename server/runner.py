@@ -6,15 +6,14 @@ import uuid
 from typing import Any, Dict, List, Optional, Set
 from datetime import datetime, timezone
 
-from monopoly.rules import get_legal_actions, apply_action
-from monopoly.game import GameState
+from src.core.game.rules import apply_action, get_legal_actions
+from src.core.game.game import ActionType, GameState
 from game_logger import GameLogger
 from events.mapper import map_events
 from snapshot import serialize_snapshot
 from src.data import session_scope, GameRepository
 
-from monopoly.game import ActionType
-from agents import GreedyAgent, RandomAgent, LLMAgent
+from src.core.agents import GreedyAgent, LLMAgent, RandomAgent
 
 logger = logging.getLogger(__name__)
 

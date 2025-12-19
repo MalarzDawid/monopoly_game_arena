@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from monopoly.game import GameState
-from monopoly.spaces import PropertySpace, RailroadSpace, UtilitySpace
+from src.core.game.game import GameState
+from src.core.game.spaces import PropertySpace, RailroadSpace, UtilitySpace
 
 
 def serialize_snapshot(game: GameState) -> Dict[str, Any]:
@@ -89,4 +89,3 @@ def serialize_snapshot(game: GameState) -> Dict[str, Any]:
     }
 
     return snapshot
-

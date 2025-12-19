@@ -1,19 +1,8 @@
 """
-Monopoly Rules Engine
+Compatibility shim for legacy imports.
 
-A complete, deterministic implementation of classic Monopoly game rules.
+Core game code moved to `src.core.game`; prefer importing from there.
 """
 
-from .game import GameState, create_game
-from .player import Player, PlayerState
-from .board import Board
-from .config import GameConfig
+from src.core.game import *  # noqa: F401,F403
 
-__all__ = [
-    "GameState",
-    "create_game",
-    "Player",
-    "PlayerState",
-    "Board",
-    "GameConfig",
-]

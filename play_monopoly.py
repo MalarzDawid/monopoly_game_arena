@@ -14,12 +14,11 @@ import uuid
 from datetime import datetime
 from typing import Optional, List
 
-from monopoly.game import create_game, ActionType
-from monopoly.player import Player
-from monopoly.config import GameConfig
-from monopoly.rules import get_legal_actions, apply_action
+from src.core import GameConfig, Player, create_game
+from src.core.game.game import ActionType
+from src.core.game.rules import apply_action, get_legal_actions
 from game_logger import GameLogger
-from agents import RandomAgent, GreedyAgent, LLMAgent
+from src.core.agents import GreedyAgent, LLMAgent, RandomAgent
 
 
 def log_all_player_states(game, logger):
