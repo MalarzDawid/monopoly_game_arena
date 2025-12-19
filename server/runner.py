@@ -314,12 +314,9 @@ class GameRunner:
         if self._last_engine_idx < len(evs):
             slice_ = evs[self._last_engine_idx:]
             # Record turn start indices for querying per turn later
-            try:
-                from monopoly_game_arena.monopoly.money import EventType as _ET
-            except Exception:
-                _ET = None
+            from src.core.game.money import EventType as _ET
             for i, ev in enumerate(slice_):
-                if _ET and ev.event_type == _ET.TURN_START:
+                if ev.event_type == _ET.TURN_START:
                     # Extract turn number from details
                     d = ev.details.get("details", ev.details)
                     t = d.get("turn") if "turn" in d else d.get("turn_number")
@@ -407,7 +404,7 @@ class GameRunner:
 
     async def apply_action_request(self, action_type: str, params: dict | None = None, player_id: Optional[int] = None) -> tuple[bool, str]:
         """Try to apply an action for a player. Returns (accepted, reason)."""
-        from monopoly.rules import Action  # local import to avoid cycles
+        from src.core.game.rules import Action  # local import to avoid cycles
 
         async with self._apply_lock:
             pid = player_id if player_id is not None else self.game.get_current_player().player_id
