@@ -18,6 +18,12 @@ dependencies = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.7.0",
     "mkdocstrings[python]>=0.25.0",
+    # Dashboard dependencies
+    "dash>=2.14.0",
+    "dash-bootstrap-components>=1.5.0",
+    "plotly>=5.18.0",
+    "pandas>=2.0.0",
+    "psycopg2-binary>=2.9.0",
     # Note: vllm removed - LLMAgent uses OpenAI-compatible API via httpx
     # Install vllm separately on Linux/Mac if running vLLM server locally
 ]

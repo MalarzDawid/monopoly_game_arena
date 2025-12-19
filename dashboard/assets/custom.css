@@ -1,0 +1,413 @@
+/**
+ * Monopoly Game Arena Dashboard - Custom Styles
+ *
+ * Built on top of Bootstrap Darkly theme
+ */
+
+/* ============================================
+   Global Styles
+   ============================================ */
+
+body {
+    background-color: #0f172a;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+}
+
+/* ============================================
+   Cards
+   ============================================ */
+
+.card {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Cards containing dropdowns should not transform (breaks z-index) */
+.card:has(.dash-dropdown),
+.card:has(.Select),
+.card.dropdown-card {
+    transform: none !important;
+    overflow: visible !important;
+}
+
+.card:has(.dash-dropdown):hover,
+.card:has(.Select):hover,
+.card.dropdown-card:hover {
+    transform: none !important;
+}
+
+.card-header {
+    background-color: #1e293b;
+    border-bottom: 1px solid #334155;
+    font-weight: 600;
+}
+
+/* KPI Cards */
+.kpi-card {
+    border-left: 4px solid #3b82f6;
+}
+
+.kpi-card.primary {
+    border-left-color: #3b82f6;
+}
+
+.kpi-card.success {
+    border-left-color: #22c55e;
+}
+
+.kpi-card.warning {
+    border-left-color: #f59e0b;
+}
+
+.kpi-card.info {
+    border-left-color: #06b6d4;
+}
+
+.kpi-card.danger {
+    border-left-color: #ef4444;
+}
+
+/* Insight Cards */
+.insight-card {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid #334155;
+}
+
+/* Game Cards (clickable) */
+.game-card {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.game-card:hover {
+    background-color: #334155;
+    border-color: #3b82f6;
+}
+
+/* ============================================
+   Navigation
+   ============================================ */
+
+.navbar {
+    background-color: #1e293b !important;
+    border-bottom: 1px solid #334155;
+    padding: 0.75rem 1rem;
+}
+
+.navbar-brand {
+    font-weight: 700;
+    font-size: 1.25rem;
+}
+
+.nav-link {
+    color: #94a3b8 !important;
+    transition: color 0.2s;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+}
+
+.nav-link:hover {
+    color: #e2e8f0 !important;
+    background-color: rgba(59, 130, 246, 0.1);
+}
+
+.nav-link.active {
+    color: #3b82f6 !important;
+    background-color: rgba(59, 130, 246, 0.1);
+}
+
+/* ============================================
+   Tables
+   ============================================ */
+
+.table {
+    color: #e2e8f0;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(30, 41, 59, 0.5);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(59, 130, 246, 0.1);
+}
+
+.table thead th {
+    background-color: #1e293b;
+    border-bottom: 2px solid #334155;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+}
+
+/* ============================================
+   Badges
+   ============================================ */
+
+.badge {
+    font-weight: 500;
+    padding: 0.35em 0.65em;
+}
+
+/* Pulse animation for LIVE badge */
+.pulse-badge {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
+}
+
+/* ============================================
+   Dropdowns
+   ============================================ */
+
+.dash-dropdown .Select-control {
+    background-color: #1e293b;
+    border-color: #334155;
+}
+
+.dash-dropdown .Select-menu-outer {
+    background-color: #1e293b;
+    border-color: #334155;
+    z-index: 9999 !important;
+}
+
+/* Ensure dropdown is always on top */
+.Select-menu-outer {
+    z-index: 9999 !important;
+}
+
+.dash-dropdown {
+    position: relative;
+    z-index: 1000;
+}
+
+.dash-dropdown .Select-option {
+    background-color: #1e293b;
+    color: #e2e8f0;
+}
+
+.dash-dropdown .Select-option:hover {
+    background-color: #334155;
+}
+
+.dash-dropdown .Select-option.is-selected {
+    background-color: #3b82f6;
+}
+
+/* Bootstrap dropdown styling for Dash */
+.Select-control {
+    background-color: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+.Select-value-label {
+    color: #e2e8f0 !important;
+}
+
+.Select-placeholder {
+    color: #64748b !important;
+}
+
+.Select-menu {
+    background-color: #1e293b !important;
+}
+
+.VirtualizedSelectOption {
+    background-color: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+
+.VirtualizedSelectFocusedOption {
+    background-color: #334155 !important;
+}
+
+/* ============================================
+   Forms & Inputs
+   ============================================ */
+
+.form-control {
+    background-color: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+.form-control:focus {
+    background-color: #1e293b;
+    border-color: #3b82f6;
+    color: #e2e8f0;
+    box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+}
+
+.form-control::placeholder {
+    color: #64748b;
+}
+
+/* ============================================
+   Charts
+   ============================================ */
+
+.js-plotly-plot .plotly .main-svg {
+    background-color: transparent !important;
+}
+
+/* ============================================
+   Scrollbars
+   ============================================ */
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+}
+
+/* ============================================
+   Progress Bars
+   ============================================ */
+
+.progress {
+    background-color: #334155;
+    border-radius: 4px;
+}
+
+/* ============================================
+   Alerts
+   ============================================ */
+
+.alert-info {
+    background-color: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.3);
+    color: #22d3ee;
+}
+
+.alert-success {
+    background-color: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #4ade80;
+}
+
+.alert-warning {
+    background-color: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+}
+
+.alert-danger {
+    background-color: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #f87171;
+}
+
+/* ============================================
+   List Groups
+   ============================================ */
+
+.list-group-item {
+    background-color: transparent;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+.list-group-flush .list-group-item:first-child {
+    border-top-width: 0;
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+.text-muted {
+    color: #64748b !important;
+}
+
+.border-secondary {
+    border-color: #334155 !important;
+}
+
+.bg-dark {
+    background-color: #1e293b !important;
+}
+
+/* ============================================
+   Responsive Adjustments
+   ============================================ */
+
+@media (max-width: 768px) {
+    .navbar-brand {
+        font-size: 1rem;
+    }
+
+    .card-body {
+        padding: 1rem;
+    }
+
+    h2 {
+        font-size: 1.5rem;
+    }
+}
+
+/* ============================================
+   Animation Classes
+   ============================================ */
+
+.fade-in {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Loading spinner */
+.loading-spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid #334155;
+    border-radius: 50%;
+    border-top-color: #3b82f6;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

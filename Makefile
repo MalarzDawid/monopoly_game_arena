@@ -1,4 +1,4 @@
-.PHONY: help install dev server db-up db-down db-migrate db-create-migration db-reset db-test db-stats db-clear test clean lint format batch batch-llm batch-multi
+.PHONY: help install dev server db-up db-down db-migrate db-create-migration db-reset db-test db-stats db-clear test clean lint format batch batch-llm batch-multi dashboard
 
 # Default target
 .DEFAULT_GOAL := help
@@ -49,6 +49,19 @@ server: ## Start FastAPI server with auto-reload
 server-prod: ## Start server in production mode (no reload)
 	@echo "$(BLUE)🚀 Starting server (production)...$(NC)"
 	uv run uvicorn server.app:app --host 0.0.0.0 --port 8000
+
+# ============================================================================
+# Dashboard
+# ============================================================================
+
+dashboard: ## Start analytics dashboard (http://localhost:8050)
+	@echo "$(BLUE)📊 Starting Dashboard...$(NC)"
+	@echo "$(YELLOW)📁 PYTHONPATH: $(PYTHONPATH)$(NC)"
+	uv run python -m dashboard.app
+
+dashboard-dev: ## Start dashboard in development mode with debug
+	@echo "$(BLUE)📊 Starting Dashboard (dev mode)...$(NC)"
+	uv run python dashboard/app.py
 
 # ============================================================================
 # Database
