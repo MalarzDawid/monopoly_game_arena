@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .registry import GameRegistry
 from snapshot import serialize_snapshot
 from src.data import init_db, close_db, get_session, GameRepository
+from src.services import GameService
 
 
 @asynccontextmanager
@@ -40,6 +41,15 @@ app = FastAPI(
     lifespan=lifespan
 )
 registry = GameRegistry()
+
+
+# ---- Dependencies ----
+async def get_repo(session: AsyncSession = Depends(get_session)) -> GameRepository:
+    return GameRepository(session)
+
+
+async def get_game_service(repo: GameRepository = Depends(get_repo)) -> GameService:
+    return GameService(repo)
 
 
 class CreateGameRequest(BaseModel):
@@ -237,11 +247,10 @@ async def list_all_games(
     limit: int = 100,
     offset: int = 0,
     status: Optional[str] = None,
-    session: AsyncSession = Depends(get_session)
+    service: GameService = Depends(get_game_service),
 ):
     """List all games from database."""
-    repo = GameRepository(session)
-    games = await repo.list_games(limit=limit, offset=offset, status=status)
+    games = await service.list_games(limit=limit, offset=offset, status=status)
 
     return {
         "games": [
@@ -276,11 +285,10 @@ async def list_all_games(
 @app.get("/api/games/{game_id}/history")
 async def get_game_history(
     game_id: str,
-    session: AsyncSession = Depends(get_session)
+    service: GameService = Depends(get_game_service),
 ):
     """Get full game history with all events from database."""
-    repo = GameRepository(session)
-    result = await repo.get_game_with_events(game_id)
+    result = await service.get_game_with_events(game_id)
 
     if not result:
         raise HTTPException(status_code=404, detail="Game not found in database")
@@ -327,16 +335,16 @@ async def get_game_history(
 @app.get("/api/games/{game_id}/stats")
 async def get_game_stats(
     game_id: str,
-    session: AsyncSession = Depends(get_session)
+    service: GameService = Depends(get_game_service),
 ):
     """Get game statistics from database."""
-    repo = GameRepository(session)
+    repo = service.repo
     game = await repo.get_game_by_id(game_id)
 
     if not game:
         raise HTTPException(status_code=404, detail="Game not found in database")
 
-    stats = await repo.get_game_statistics(game.id)
+    stats = await service.get_game_stats(game.id)
 
     return {
         "game_id": game_id,

@@ -137,6 +137,23 @@ class GameService:
             logger.exception("Failed to apply action")
             return False, str(e)
 
+    # ---- Query helpers (thin repo wrappers) ----
+
+    async def list_games(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        status: Optional[str] = None,
+    ) -> List[Any]:
+        return await self.repo.list_games(limit=limit, offset=offset, status=status)
+
+    async def get_game_with_events(self, game_id: str) -> Optional[tuple[Any, List[Any]]]:
+        return await self.repo.get_game_with_events(game_id)
+
+    async def get_game_stats(self, game_uuid: uuid.UUID) -> Dict[str, Any]:
+        return await self.repo.get_game_statistics(game_uuid)
+
     @staticmethod
     def _default_names(n: int) -> list[str]:
         base = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Hank"]
@@ -157,4 +174,3 @@ class GameService:
             else:
                 agents[i] = GreedyAgent(i, name)
         return agents
-
