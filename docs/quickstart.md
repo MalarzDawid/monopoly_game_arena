@@ -5,7 +5,7 @@ This guide shows how to create a game, add players, make moves, and run simulati
 ### Create a game
 
 ```python
-from monopoly import GameConfig, create_game, Player
+from src.core import GameConfig, Player, create_game
 
 # Define players
 players = [
@@ -25,8 +25,8 @@ print(game.get_current_player())  # PlayerState(...)
 Use the high-level rules API to get legal actions and apply one.
 
 ```python
-from monopoly.rules import get_legal_actions, apply_action, Action
-from monopoly.game import ActionType
+from src.core.game.rules import get_legal_actions, apply_action, Action
+from src.core.game.game import ActionType
 
 pid = game.get_current_player().player_id
 
@@ -62,8 +62,8 @@ Three agents are included for simulations:
 | `LLMAgent` | LLM-powered strategic decisions |
 
 ```python
-from agents import RandomAgent, GreedyAgent, LLMAgent
-from monopoly.rules import get_legal_actions, apply_action
+from src.core.agents import RandomAgent, GreedyAgent, LLMAgent
+from src.core.game.rules import get_legal_actions, apply_action
 
 agents = [
     GreedyAgent(0, "Alice"),
@@ -129,7 +129,7 @@ Run a complete simulation using the CLI script.
 
 ```bash
 # Greedy agents (default)
-uv run python play_monopoly.py --players 4 --agent greedy --seed 42
+PYTHONPATH=$(pwd) uv run python play_monopoly.py --players 4 --agent greedy --seed 42
 
 # Random agents
 uv run python play_monopoly.py --players 4 --agent random

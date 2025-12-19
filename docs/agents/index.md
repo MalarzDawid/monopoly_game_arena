@@ -67,8 +67,8 @@ sequenceDiagram
 ### Usage
 
 ```python
-from agents import RandomAgent, GreedyAgent, LLMAgent
-from monopoly.rules import get_legal_actions, apply_action
+from src.core.agents import RandomAgent, GreedyAgent, LLMAgent
+from src.core.game.rules import get_legal_actions, apply_action
 
 # Create agents for each player
 agents = [

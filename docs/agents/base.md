@@ -54,9 +54,9 @@ When implementing a custom agent:
 ### Example Implementation
 
 ```python
-from agents import Agent
-from monopoly.game import ActionType
-from monopoly.rules import Action
+from src.core.agents import Agent
+from src.core.game.game import ActionType
+from src.core.game.rules import Action
 
 class ConservativeAgent(Agent):
     """Agent that only buys cheap properties."""

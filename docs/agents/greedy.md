@@ -45,7 +45,7 @@ flowchart TD
 ### Usage
 
 ```python
-from agents import GreedyAgent
+from src.core.agents import GreedyAgent
 from monopoly.rules import get_legal_actions, apply_action
 
 agent = GreedyAgent(player_id=0, name="Alice")

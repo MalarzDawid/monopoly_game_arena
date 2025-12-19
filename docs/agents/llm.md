@@ -44,7 +44,7 @@ LLM_MAX_TOKENS=512
 #### Constructor Parameters
 
 ```python
-from agents import LLMAgent
+from src.core.agents import LLMAgent
 
 agent = LLMAgent(
     player_id=0,
@@ -101,8 +101,8 @@ sequenceDiagram
 #### Basic Usage
 
 ```python
-from agents import LLMAgent
-from monopoly.rules import get_legal_actions, apply_action
+from src.core.agents import LLMAgent
+from src.core.game.rules import get_legal_actions, apply_action
 
 # Create agent with default settings (uses env vars)
 agent = LLMAgent(player_id=0, name="Alice")
