@@ -15,6 +15,14 @@ from .registry import GameRegistry
 from snapshot import serialize_snapshot
 from src.data import init_db, close_db, get_session, GameRepository
 from src.services import GameService
+from .schemas import (
+    GameEventDTO,
+    GameHistoryResponse,
+    GameListResponse,
+    GameStatsResponse,
+    GameSummary,
+    PlayerSummary,
+)
 
 
 @asynccontextmanager
@@ -242,7 +250,7 @@ async def get_turn_events(game_id: str, turn_number: int):
 
 # ---- Database History Endpoints ----
 
-@app.get("/api/games")
+@app.get("/api/games", response_model=GameListResponse)
 async def list_all_games(
     limit: int = 100,
     offset: int = 0,
@@ -252,37 +260,37 @@ async def list_all_games(
     """List all games from database."""
     games = await service.list_games(limit=limit, offset=offset, status=status)
 
-    return {
-        "games": [
-            {
-                "game_id": g.game_id,
-                "status": g.status,
-                "total_turns": g.total_turns,
-                "created_at": g.created_at.isoformat() if g.created_at else None,
-                "started_at": g.started_at.isoformat() if g.started_at else None,
-                "finished_at": g.finished_at.isoformat() if g.finished_at else None,
-                "winner_id": g.winner_id,
-                "config": g.config,
-                "players": [
-                    {
-                        "player_id": p.player_id,
-                        "name": p.name,
-                        "agent_type": p.agent_type,
-                        "is_winner": p.is_winner,
-                        "final_cash": p.final_cash,
-                        "final_net_worth": p.final_net_worth,
-                    }
+    return GameListResponse(
+        games=[
+            GameSummary(
+                game_id=g.game_id,
+                status=g.status,
+                total_turns=g.total_turns,
+                created_at=g.created_at,
+                started_at=g.started_at,
+                finished_at=g.finished_at,
+                winner_id=g.winner_id,
+                config=g.config,
+                players=[
+                    PlayerSummary(
+                        player_id=p.player_id,
+                        name=p.name,
+                        agent_type=p.agent_type,
+                        is_winner=p.is_winner,
+                        final_cash=p.final_cash,
+                        final_net_worth=p.final_net_worth,
+                    )
                     for p in g.players
-                ]
-            }
+                ],
+            )
             for g in games
         ],
-        "limit": limit,
-        "offset": offset,
-    }
+        limit=limit,
+        offset=offset,
+    )
 
 
-@app.get("/api/games/{game_id}/history")
+@app.get("/api/games/{game_id}/history", response_model=GameHistoryResponse)
 async def get_game_history(
     game_id: str,
     service: GameService = Depends(get_game_service),
@@ -295,44 +303,46 @@ async def get_game_history(
 
     game, events = result
 
-    return {
-        "game": {
-            "game_id": game.game_id,
-            "status": game.status,
-            "total_turns": game.total_turns,
-            "created_at": game.created_at.isoformat() if game.created_at else None,
-            "started_at": game.started_at.isoformat() if game.started_at else None,
-            "finished_at": game.finished_at.isoformat() if game.finished_at else None,
-            "winner_id": game.winner_id,
-            "config": game.config,
-            "players": [
-                {
-                    "player_id": p.player_id,
-                    "name": p.name,
-                    "agent_type": p.agent_type,
-                    "is_winner": p.is_winner,
-                    "final_cash": p.final_cash,
-                    "final_net_worth": p.final_net_worth,
-                }
-                for p in game.players
-            ]
-        },
-        "events": [
-            {
-                "sequence_number": e.sequence_number,
-                "turn_number": e.turn_number,
-                "event_type": e.event_type,
-                "timestamp": e.timestamp.isoformat() if e.timestamp else None,
-                "payload": e.payload,
-                "actor_player_id": e.actor_player_id,
-            }
+    game_summary = GameSummary(
+        game_id=game.game_id,
+        status=game.status,
+        total_turns=game.total_turns,
+        created_at=game.created_at,
+        started_at=game.started_at,
+        finished_at=game.finished_at,
+        winner_id=game.winner_id,
+        config=game.config,
+        players=[
+            PlayerSummary(
+                player_id=p.player_id,
+                name=p.name,
+                agent_type=p.agent_type,
+                is_winner=p.is_winner,
+                final_cash=p.final_cash,
+                final_net_worth=p.final_net_worth,
+            )
+            for p in game.players
+        ],
+    )
+
+    return GameHistoryResponse(
+        game=game_summary,
+        events=[
+            GameEventDTO(
+                sequence_number=e.sequence_number,
+                turn_number=e.turn_number,
+                event_type=e.event_type,
+                timestamp=e.timestamp,
+                payload=e.payload,
+                actor_player_id=e.actor_player_id,
+            )
             for e in events
         ],
-        "total_events": len(events),
-    }
+        total_events=len(events),
+    )
 
 
-@app.get("/api/games/{game_id}/stats")
+@app.get("/api/games/{game_id}/stats", response_model=GameStatsResponse)
 async def get_game_stats(
     game_id: str,
     service: GameService = Depends(get_game_service),
@@ -346,12 +356,12 @@ async def get_game_stats(
 
     stats = await service.get_game_stats(game.id)
 
-    return {
-        "game_id": game_id,
-        "status": game.status,
-        "total_turns": game.total_turns,
-        "statistics": stats,
-    }
+    return GameStatsResponse(
+        game_id=game_id,
+        status=game.status,
+        total_turns=game.total_turns,
+        statistics=stats,
+    )
 
 
 # ---- Static UI ----
