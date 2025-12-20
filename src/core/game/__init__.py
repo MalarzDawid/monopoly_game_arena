@@ -1,13 +1,7 @@
-"""
-Monopoly Rules Engine
-
-A complete, deterministic implementation of classic Monopoly game rules.
-"""
-
-from .game import GameState, create_game
-from .player import Player, PlayerState
-from .board import Board
-from .config import GameConfig
+from src.core.game.game import GameState, create_game
+from src.core.game.player import Player, PlayerState
+from src.core.game.board import Board
+from src.core.game.config import GameConfig
 
 __all__ = [
     "GameState",

@@ -1,25 +1,21 @@
-"""
-Main game engine and state management.
-"""
-
 import random
 from typing import Dict, List, Optional, Set, Tuple
 from enum import Enum
 
-from .board import Board
-from .player import Player, PlayerState, PropertyOwnership
-from .config import GameConfig
-from .spaces import (
+from src.core.game.board import Board
+from src.core.game.player import Player, PlayerState, PropertyOwnership
+from src.core.game.config import GameConfig
+from src.core.game.spaces import (
     PropertySpace,
     RailroadSpace,
     UtilitySpace,
     TaxSpace,
     SpaceType,
 )
-from .cards import Card, CardType, create_chance_deck, create_community_chest_deck, Deck
-from .money import Bank, EventLog, EventType
-from .auction import Auction
-from .trading import TradeManager, TradeOffer, TradeItem, TradeItemType
+from src.core.game.cards import Card, CardType, create_chance_deck, create_community_chest_deck, Deck
+from src.core.game.money import Bank, EventLog, EventType
+from src.core.game.auction import Auction
+from src.core.game.trading import TradeManager, TradeOffer, TradeItem, TradeItemType
 
 
 class ActionType(Enum):
@@ -318,10 +314,6 @@ class GameState:
 
         player.get_out_of_jail_cards -= 1
         self._release_from_jail(player_id)
-
-        # Return card to appropriate deck (simplified: return to chance)
-        # In full implementation, track which deck the card came from
-        from .cards import Card, CardType
 
         card = Card("Get Out of Jail Free", CardType.GET_OUT_OF_JAIL)
         self.chance_deck.return_held_card(card)
@@ -1253,7 +1245,6 @@ class GameState:
             self.players[creditor_id].get_out_of_jail_cards += player.get_out_of_jail_cards
         else:
             # Return to deck bottom
-            from .cards import Card, CardType
             for _ in range(player.get_out_of_jail_cards):
                 card = Card("Get Out of Jail Free", CardType.GET_OUT_OF_JAIL)
                 # Return to chance deck (simplified - in real game would track which deck)

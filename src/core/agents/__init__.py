@@ -1,17 +1,7 @@
-"""
-Monopoly game agents.
-
-This module provides different AI agents for playing Monopoly:
-- Agent: Abstract base class for all agents
-- RandomAgent: Makes random legal moves
-- GreedyAgent: Prefers buying properties and building
-- LLMAgent: LLM-powered agent (stub, not yet implemented)
-"""
-
-from .base import Agent
-from .random import RandomAgent
-from .greedy import GreedyAgent
-from .llm import LLMAgent
+from src.core.agents.base import Agent
+from src.core.agents.random import RandomAgent
+from src.core.agents.greedy import GreedyAgent
+from src.core.agents.llm import LLMAgent
 
 __all__ = [
     "Agent",

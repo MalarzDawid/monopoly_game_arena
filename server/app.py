@@ -11,12 +11,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .registry import GameRegistry
-from .dashboard_api import router as dashboard_router
+from server.registry import GameRegistry
+from server.dashboard_api import router as dashboard_router
 from snapshot import serialize_snapshot
 from src.data import init_db, close_db, get_session, GameRepository
 from src.services import GameService
-from .schemas import (
+from server.schemas import (
     GameEventDTO,
     GameHistoryResponse,
     GameListResponse,

@@ -28,3 +28,13 @@ dependencies = [
     # Install vllm separately on Linux/Mac if running vLLM server locally
     "pytest-asyncio>=0.23.0",
 ]
+
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

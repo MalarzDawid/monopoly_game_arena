@@ -13,7 +13,7 @@ from src.core.game.game import ActionType, GameState
 from src.core.game.rules import Action
 from src.core.game.spaces import PropertySpace, RailroadSpace, UtilitySpace
 
-from .base import Agent
+from src.core.agents.base import Agent
 
 logger = logging.getLogger(__name__)
 

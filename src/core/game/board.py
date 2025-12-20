@@ -1,10 +1,6 @@
-"""
-Game board definition with standard Monopoly layout.
-"""
-
 from typing import Dict, List, Optional
 
-from .spaces import (
+from src.core.game.spaces import (
     Space,
     SpaceType,
     GoSpace,

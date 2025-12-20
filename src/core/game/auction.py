@@ -1,10 +1,6 @@
-"""
-Auction system for properties.
-"""
-
 from typing import Dict, List, Optional
 
-from .money import EventLog, EventType
+from src.core.game.money import EventLog, EventType
 
 
 class Auction:
