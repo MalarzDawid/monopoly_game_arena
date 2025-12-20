@@ -3,7 +3,7 @@ Tests for turn flow mechanics including doubles and jail.
 """
 
 import pytest
-from src.core import GameConfig, Player, create_game
+from core import GameConfig, Player, create_game
 
 def test_basic_turn_flow():
     """Test basic turn progression."""

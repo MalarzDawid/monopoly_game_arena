@@ -1,7 +1,7 @@
 import pytest
 
-from src.core import GameConfig, Player, create_game
-from src.core.game.rules import get_legal_actions, ActionType
+from core import GameConfig, Player, create_game
+from core.game.rules import get_legal_actions, ActionType
 
 
 def test_basic_turn_flow():

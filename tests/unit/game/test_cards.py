@@ -3,8 +3,8 @@ Tests for Chance and Community Chest cards.
 """
 
 import pytest
-from src.core import GameConfig, Player, create_game
-from src.core.game.cards import Card, CardType
+from core import GameConfig, Player, create_game
+from core.game.cards import Card, CardType
 
 
 def test_card_move_to_pass_go():

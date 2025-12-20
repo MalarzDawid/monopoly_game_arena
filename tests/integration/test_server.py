@@ -3,7 +3,7 @@ from typing import List
 
 from fastapi.testclient import TestClient
 
-from monopoly_game_arena.server.app import app
+from server.app import app
 
 
 def _create_game(client: TestClient, players: int = 4, agent: str = "greedy", max_turns: int = 10) -> str:

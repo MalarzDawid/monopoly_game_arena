@@ -17,8 +17,8 @@ from typing import Dict, Any
 
 import pytest
 
-from src.data import init_db, close_db, session_scope, GameRepository
-from src.data.models import Game, Player, LLMDecision
+from data import init_db, close_db, session_scope, GameRepository
+from data.models import Game, Player, LLMDecision
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

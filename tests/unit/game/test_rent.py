@@ -3,7 +3,7 @@ Tests for rent calculation on all property types.
 """
 
 import pytest
-from src.core import GameConfig, Player, create_game
+from core import GameConfig, Player, create_game
 
 
 def test_basic_property_rent():

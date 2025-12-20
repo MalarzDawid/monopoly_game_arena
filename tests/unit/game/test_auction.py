@@ -3,9 +3,9 @@ Tests for property auctions.
 """
 
 import pytest
-from src.core import GameConfig, Player, create_game
-from src.core.game.auction import Auction
-from src.core.game.money import EventLog
+from core import GameConfig, Player, create_game
+from core.game.auction import Auction
+from core.game.money import EventLog
 
 
 def test_auction_creation():

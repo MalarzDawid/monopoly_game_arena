@@ -1,10 +1,9 @@
 import pytest
 
-from src.core import GameConfig, Player, create_game
-from src.core.game.game import ActionType
-from src.core.game.rules import Action, apply_action
-
-from events.mapper import map_events
+from core import GameConfig, Player, create_game
+from core.game.game import ActionType
+from core.game.rules import Action, apply_action
+from core.events import map_events
 
 
 def test_map_basic_roll_move_land_events():

@@ -3,8 +3,8 @@ Tests specifically for jail mechanics.
 """
 
 import pytest
-from src.core import GameConfig, Player, create_game
-from src.core.game.cards import Card, CardType
+from core import GameConfig, Player, create_game
+from core.game.cards import Card, CardType
 
 
 def test_jail_pay_fine():

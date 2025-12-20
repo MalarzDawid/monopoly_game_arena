@@ -3,7 +3,7 @@ Tests for mortgages and bankruptcy.
 """
 
 import pytest
-from src.core import GameConfig, Player, create_game
+from core import GameConfig, Player, create_game
 
 
 def test_mortgage_property():

@@ -10,7 +10,7 @@ Run this after setting up PostgreSQL and running migrations:
 import asyncio
 from datetime import datetime
 
-from src.data import (
+from data import (
     init_db,
     close_db,
     session_scope,

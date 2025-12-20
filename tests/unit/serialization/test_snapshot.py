@@ -1,6 +1,5 @@
-from src.core import GameConfig, Player, create_game
-
-from snapshot import serialize_snapshot
+from core import GameConfig, Player, create_game
+from core.serialization import serialize_snapshot
 
 
 def test_basic_snapshot_structure():
