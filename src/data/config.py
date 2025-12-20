@@ -2,10 +2,14 @@
 Database configuration using pydantic-settings.
 
 Handles environment variables and provides type-safe config access,
-including basic validation of connection URLs and secrets.
+including light validation of connection URLs and secrets.
+
+In development, the default password is allowed but a warning is logged.
+For production deployments, configure a strong password via environment
+variables and/or a dedicated secrets manager.
 """
 
-import os
+import logging
 from functools import lru_cache
 from typing import Optional
 
@@ -57,29 +61,26 @@ class DatabaseSettings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def validate_async_url(cls, v: str) -> str:
-        """Ensure async URL uses asyncpg driver."""
+        """Ensure async URL uses asyncpg driver and warn on default credentials."""
         if not v.startswith("postgresql+asyncpg://"):
             raise ValueError("DATABASE_URL must use postgresql+asyncpg:// scheme")
-        # Basic secret hygiene: disallow default password outside debug environments.
-        debug_env = os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}
-        if "monopoly_pass" in v and not debug_env:
-            raise ValueError(
+        if "monopoly_pass" in v:
+            logging.getLogger(__name__).warning(
                 "DATABASE_URL is using the default 'monopoly_pass' password. "
-                "Change it in production or unset DEBUG."
+                "This is fine for local development, but MUST be changed in production."
             )
         return v
 
     @field_validator("database_url_sync")
     @classmethod
     def validate_sync_url(cls, v: str) -> str:
-        """Ensure sync URL uses standard postgres driver."""
+        """Ensure sync URL uses standard postgres driver and warn on default credentials."""
         if not v.startswith("postgresql://"):
             raise ValueError("DATABASE_URL_SYNC must use postgresql:// scheme")
-        debug_env = os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}
-        if "monopoly_pass" in v and not debug_env:
-            raise ValueError(
+        if "monopoly_pass" in v:
+            logging.getLogger(__name__).warning(
                 "DATABASE_URL_SYNC is using the default 'monopoly_pass' password. "
-                "Change it in production or unset DEBUG."
+                "This is fine for local development, but MUST be changed in production."
             )
         return v
 

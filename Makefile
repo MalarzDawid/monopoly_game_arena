@@ -1,4 +1,4 @@
-.PHONY: help install dev server db-up db-down db-migrate db-create-migration db-reset db-test db-stats db-clear test clean lint format batch batch-llm batch-multi dashboard
+.PHONY: help install dev server db-up db-down db-migrate db-create-migration db-reset db-test db-stats db-clear test clean lint format batch batch-llm batch-multi dashboard analyze
 
 # Default target
 .DEFAULT_GOAL := help
@@ -62,7 +62,20 @@ dashboard: ## Start analytics dashboard (http://localhost:8050)
 
 dashboard-dev: ## Start dashboard in development mode with debug
 	@echo "$(BLUE)📊 Starting Dashboard (dev mode)...$(NC)"
-	uv run python dashboard/app.py
+	uv run python -m dashboard.app
+
+# ============================================================================
+# Analysis / Tools
+# ============================================================================
+
+analyze: ## Analyze a saved game JSONL file (usage: make analyze FILE=path/to/game.jsonl)
+	@if [ -z "$(FILE)" ]; then \
+		echo "$(RED)❌ Error: FILE is required$(NC)"; \
+		echo "$(YELLOW)Usage: make analyze FILE=path/to/game.jsonl$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)📊 Analyzing game from $(FILE)...$(NC)"
+	uv run python scripts/analyze_game.py $(FILE)
 
 # ============================================================================
 # Database
