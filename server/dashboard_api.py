@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.data import get_session
+from data import get_session
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 

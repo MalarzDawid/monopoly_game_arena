@@ -5,10 +5,10 @@ This module provides the public interface for game actions and legal move detect
 
 from typing import Any, Dict, List, Optional
 
-from src.core.game.game import ActionType, GameState
-from src.core.game.spaces import SpaceType
-from src.core.game.player import PlayerState
-from src.core.game.money import EventType
+from core.game.game import ActionType, GameState
+from core.game.spaces import SpaceType
+from core.game.player import PlayerState
+from core.game.money import EventType
 
 
 class Action:
@@ -526,7 +526,7 @@ def _resolve_landing(game_state: GameState, player_id: int, position: int) -> No
     """
     space = game_state.board.get_space(position)
 
-    from src.core.game.money import EventType
+    from core.game.money import EventType
 
     game_state.event_log.log(
         EventType.LAND,

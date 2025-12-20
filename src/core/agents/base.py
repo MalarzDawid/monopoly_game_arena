@@ -4,8 +4,8 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
-    from src.core.game.game import GameState
-    from src.core.game.rules import Action
+    from core.game.game import GameState
+    from core.game.rules import Action
 
 
 class Agent(ABC):

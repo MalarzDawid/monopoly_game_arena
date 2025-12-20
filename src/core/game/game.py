@@ -2,20 +2,20 @@ import random
 from typing import Dict, List, Optional, Set, Tuple
 from enum import Enum
 
-from src.core.game.board import Board
-from src.core.game.player import Player, PlayerState, PropertyOwnership
-from src.core.game.config import GameConfig
-from src.core.game.spaces import (
+from core.game.board import Board
+from core.game.player import Player, PlayerState, PropertyOwnership
+from core.game.config import GameConfig
+from core.game.spaces import (
     PropertySpace,
     RailroadSpace,
     UtilitySpace,
     TaxSpace,
     SpaceType,
 )
-from src.core.game.cards import Card, CardType, create_chance_deck, create_community_chest_deck, Deck
-from src.core.game.money import Bank, EventLog, EventType
-from src.core.game.auction import Auction
-from src.core.game.trading import TradeManager, TradeOffer, TradeItem, TradeItemType
+from core.game.cards import Card, CardType, create_chance_deck, create_community_chest_deck, Deck
+from core.game.money import Bank, EventLog, EventType
+from core.game.auction import Auction
+from core.game.trading import TradeManager, TradeOffer, TradeItem, TradeItemType
 
 
 class ActionType(Enum):

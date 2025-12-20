@@ -1,6 +1,6 @@
-from src.data.config import get_settings
-from src.data.models import Base, Game, Player, GameEvent, LLMDecision
-from src.data.session import (
+from data.config import get_settings
+from data.models import Base, Game, Player, GameEvent, LLMDecision
+from data.session import (
     get_session,
     init_db,
     close_db,
@@ -9,7 +9,7 @@ from src.data.session import (
     drop_tables,
     get_engine,
 )
-from src.data.repository import GameRepository
+from data.repository import GameRepository
 
 __all__ = [
     "get_settings",

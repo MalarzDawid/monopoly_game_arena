@@ -9,11 +9,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
-from src.core import GameConfig, GameState, Player, create_game
-from src.core.agents import Agent, GreedyAgent, LLMAgent, RandomAgent
-from src.core.game.game import ActionType
-from src.core.game.rules import Action, apply_action, get_legal_actions
-from src.data import GameRepository
+from core import GameConfig, GameState, Player, create_game
+from core.agents import Agent, GreedyAgent, LLMAgent, RandomAgent
+from core.game.game import ActionType
+from core.game.rules import Action, apply_action, get_legal_actions
+from data import GameRepository
 
 logger = logging.getLogger(__name__)
 

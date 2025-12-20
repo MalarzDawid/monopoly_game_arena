@@ -1,7 +1,7 @@
-from src.core.game.game import GameState, create_game
-from src.core.game.player import Player, PlayerState
-from src.core.game.board import Board
-from src.core.game.config import GameConfig
+from core.game.game import GameState, create_game
+from core.game.player import Player, PlayerState
+from core.game.board import Board
+from core.game.config import GameConfig
 
 __all__ = [
     "GameState",

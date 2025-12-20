@@ -9,11 +9,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import httpx
 
-from src.core.game.game import ActionType, GameState
-from src.core.game.rules import Action
-from src.core.game.spaces import PropertySpace, RailroadSpace, UtilitySpace
+from core.game.game import ActionType, GameState
+from core.game.rules import Action
+from core.game.spaces import PropertySpace, RailroadSpace, UtilitySpace
 
-from src.core.agents.base import Agent
+from core.agents.base import Agent
 
 logger = logging.getLogger(__name__)
 

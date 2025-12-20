@@ -20,8 +20,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from src.data.config import get_settings
-from src.data.models import Base
+from data.config import get_settings
+from data.models import Base
 
 logger = logging.getLogger(__name__)
 

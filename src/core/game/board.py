@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 
-from src.core.game.spaces import (
+from core.game.spaces import (
     Space,
     SpaceType,
     GoSpace,

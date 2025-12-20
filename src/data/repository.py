@@ -16,7 +16,7 @@ from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.data.models import Game, GameEvent, Player, LLMDecision
+from data.models import Game, GameEvent, Player, LLMDecision
 
 logger = logging.getLogger(__name__)
 

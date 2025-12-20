@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 
-from src.core.game.money import EventLog, EventType
+from core.game.money import EventLog, EventType
 
 
 class Auction:

@@ -4,9 +4,9 @@ import asyncio
 import uuid
 from typing import Dict, Optional
 
-from src.core import GameConfig, Player, create_game
-from src.data import GameRepository, session_scope
-from src.services import GameService
+from core import GameConfig, Player, create_game
+from data import GameRepository, session_scope
+from services import GameService
 
 from server.runner import GameRunner
 
