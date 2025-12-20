@@ -14,11 +14,11 @@ import uuid
 from datetime import datetime
 from typing import Optional, List
 
-from src.core import GameConfig, Player, create_game
-from src.core.game.game import ActionType
-from src.core.game.rules import apply_action, get_legal_actions
-from game_logger import GameLogger
-from src.core.agents import GreedyAgent, LLMAgent, RandomAgent
+from core import GameConfig, Player, create_game
+from core.game.game import ActionType
+from core.game.rules import apply_action, get_legal_actions
+from core.logging import GameLogger
+from core.agents import GreedyAgent, LLMAgent, RandomAgent
 
 
 def log_all_player_states(game, logger):
@@ -129,7 +129,7 @@ async def simulate_game(
 
     if save_to_db:
         try:
-            from src.data import init_db, close_db, session_scope, GameRepository
+            from data import init_db, close_db, session_scope, GameRepository
             await init_db()
             db_initialized = True
 
@@ -366,7 +366,7 @@ async def simulate_game(
     # Update game status in database
     if db_initialized and game_id:
         try:
-            from src.data import session_scope, GameRepository, close_db
+            from data import session_scope, GameRepository, close_db
 
             async with session_scope() as session:
                 repo = GameRepository(session)

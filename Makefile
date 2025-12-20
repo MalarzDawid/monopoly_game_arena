@@ -12,8 +12,8 @@ NC := \033[0m # No Color
 
 # Project paths
 PROJECT_DIR := $(shell pwd)
-export PYTHONPATH := $(PROJECT_DIR):$(PYTHONPATH)
-ALEMBIC := PYTHONPATH=$(PROJECT_DIR) UV_CACHE_DIR=.uv-cache uv run alembic
+export PYTHONPATH := $(PROJECT_DIR)/src:$(PROJECT_DIR):$(PYTHONPATH)
+ALEMBIC := PYTHONPATH=$(PROJECT_DIR)/src UV_CACHE_DIR=.uv-cache uv run alembic
 
 help: ## Show this help message
 	@echo "$(BLUE)Monopoly Game Arena - Makefile Commands$(NC)"
@@ -203,7 +203,7 @@ type-check: ## Run type checking with mypy
 
 play: ## Run CLI game simulation
 	@echo "$(BLUE)🎲 Starting Monopoly game...$(NC)"
-	uv run python play_monopoly.py
+	uv run python scripts/play_monopoly.py
 
 play-seed: ## Run game with specific seed (usage: make play-seed SEED=42)
 	@if [ -z "$(SEED)" ]; then \
@@ -212,7 +212,7 @@ play-seed: ## Run game with specific seed (usage: make play-seed SEED=42)
 		exit 1; \
 	fi
 	@echo "$(BLUE)🎲 Starting game with seed $(SEED)...$(NC)"
-	uv run python play_monopoly.py --seed $(SEED)
+	uv run python scripts/play_monopoly.py --seed $(SEED)
 
 batch: ## Run batch games (usage: make batch GAMES=10 AGENT=greedy)
 	@echo "$(BLUE)🎲 Running batch games...$(NC)"

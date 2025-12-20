@@ -6,14 +6,14 @@ import uuid
 from typing import Any, Dict, List, Optional, Set
 from datetime import datetime, timezone
 
-from src.core.game.game import ActionType, GameState
-from src.core.game.rules import apply_action, get_legal_actions
-from src.services import GameService
-from game_logger import GameLogger
-from events.mapper import map_events
-from snapshot import serialize_snapshot
-from src.core.agents import GreedyAgent, LLMAgent, RandomAgent
-from src.data import GameRepository, session_scope
+from core.game.game import ActionType, GameState
+from core.game.rules import apply_action, get_legal_actions
+from core.agents import GreedyAgent, LLMAgent, RandomAgent
+from core.logging import GameLogger
+from core.events import map_events
+from core.serialization import serialize_snapshot
+from data import GameRepository, session_scope
+from services import GameService
 
 logger = logging.getLogger(__name__)
 

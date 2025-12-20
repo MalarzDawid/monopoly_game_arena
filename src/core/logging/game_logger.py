@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from events.mapper import map_events
+from core.events.mapper import map_events
 
 
 class GameLogger:
@@ -81,7 +81,7 @@ class GameLogger:
         self._pending_db_events.clear()
 
         try:
-            from src.data import session_scope, GameRepository
+            from data import session_scope, GameRepository
 
             async with session_scope() as session:
                 repo = GameRepository(session)

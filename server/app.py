@@ -13,9 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.registry import GameRegistry
 from server.dashboard_api import router as dashboard_router
-from snapshot import serialize_snapshot
-from src.data import init_db, close_db, get_session, GameRepository
-from src.services import GameService
+from core.serialization import serialize_snapshot
+from data import init_db, close_db, get_session, GameRepository
+from services import GameService
 from server.schemas import (
     GameEventDTO,
     GameHistoryResponse,
