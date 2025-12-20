@@ -14,6 +14,7 @@ from core.agents import Agent, GreedyAgent, LLMAgent, RandomAgent
 from core.game.game import ActionType
 from core.game.rules import Action, apply_action, get_legal_actions
 from data import GameRepository
+from core.exceptions import InvalidActionError, MonopolyError
 
 logger = logging.getLogger(__name__)
 
@@ -131,11 +132,14 @@ class GameService:
             action = Action(ActionType(action_type), **params)
             ok = apply_action(game, action, player_id)
             if not ok:
-                return False, "Action rejected by engine"
+                raise InvalidActionError("Action rejected by engine")
             return True, None
+        except InvalidActionError as e:
+            logger.info("Invalid action rejected by engine: %s", e)
+            return False, str(e)
         except Exception as e:
             logger.exception("Failed to apply action")
-            return False, str(e)
+            raise MonopolyError(f"Failed to apply action: {e}") from e
 
     # ---- Query helpers (thin repo wrappers) ----
 

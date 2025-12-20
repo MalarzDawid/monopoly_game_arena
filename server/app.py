@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.registry import GameRegistry
 from server.dashboard_api import router as dashboard_router
 from core.serialization import serialize_snapshot
+from core.exceptions import MonopolyError
 from data import init_db, close_db, get_session, GameRepository
 from services import GameService
 from server.schemas import (
@@ -60,6 +61,15 @@ async def get_repo(session: AsyncSession = Depends(get_session)) -> GameReposito
 
 async def get_game_service(repo: GameRepository = Depends(get_repo)) -> GameService:
     return GameService(repo)
+
+
+@app.exception_handler(MonopolyError)
+async def monopoly_exception_handler(request: Request, exc: MonopolyError):
+    """Handle domain-specific errors in a consistent JSON format."""
+    return JSONResponse(
+        status_code=400,
+        content={"error": exc.__class__.__name__, "message": str(exc)},
+    )
 
 
 class CreateGameRequest(BaseModel):

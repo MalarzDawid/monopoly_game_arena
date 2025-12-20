@@ -13,6 +13,7 @@ from core.logging import GameLogger
 from core.events import map_events
 from core.serialization import serialize_snapshot
 from data import GameRepository, session_scope
+from core.exceptions import MonopolyError, InvalidActionError, LLMError
 from services import GameService
 
 logger = logging.getLogger(__name__)
@@ -133,6 +134,9 @@ class GameRunner:
                         status="running",
                         started_at=datetime.now(timezone.utc),
                     )
+        except MonopolyError as e:
+            # Domain-level error during startup; log and continue best-effort.
+            logger.warning("Domain error while starting game %s: %s", self.game_id, e)
         except Exception as e:
             # Non-fatal; continue even if DB update fails
             logger.warning(f"Failed to fetch game UUID or update status: {e}")
@@ -217,7 +221,15 @@ class GameRunner:
                         await asyncio.sleep(self._tick)
                         continue
                     agent = self.agents[bidder_id]
-                    action = agent.choose_action(self.game, actions)
+                    try:
+                        action = agent.choose_action(self.game, actions)
+                    except LLMError as e:
+                        logger.warning("LLM agent error during auction for player %s: %s", bidder_id, e)
+                        # Fallback: pass bidder's turn in auction
+                        self.game.active_auction.pass_turn(bidder_id)
+                        await self.flush_and_broadcast()
+                        await asyncio.sleep(self._tick)
+                        continue
                     if action is None:
                         self.game.active_auction.pass_turn(bidder_id)
                         await self.flush_and_broadcast()
@@ -248,7 +260,14 @@ class GameRunner:
                 continue
             else:
                 agent = self.agents[current.player_id]
-                action = agent.choose_action(self.game, actions)
+                try:
+                    action = agent.choose_action(self.game, actions)
+                except LLMError as e:
+                    logger.warning("LLM agent error for player %s: %s", current.player_id, e)
+                    # Treat as no decision; end turn to keep game moving
+                    self.game.end_turn()
+                    await asyncio.sleep(self._tick)
+                    continue
                 if action is None:
                     self.game.end_turn()
                     await asyncio.sleep(self._tick)

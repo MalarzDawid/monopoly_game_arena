@@ -14,6 +14,7 @@ from core.game.rules import Action
 from core.game.spaces import PropertySpace, RailroadSpace, UtilitySpace
 
 from core.agents.base import Agent
+from core.exceptions import LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -143,8 +144,9 @@ class LLMAgent(Agent):
             raw_response = self._query_llm(prompt)
             chosen_action, rationale = self._parse_response(raw_response, legal_actions)
         except Exception as e:
-            error_msg = str(e)
-            logger.warning(f"LLM error for player {self.player_id}: {error_msg}")
+            llm_error = LLMError(str(e))
+            error_msg = str(llm_error)
+            logger.warning("LLM error for player %s: %s", self.player_id, error_msg)
 
         # Fallback if parsing failed or action invalid
         if chosen_action is None:
@@ -179,7 +181,7 @@ class LLMAgent(Agent):
             try:
                 self.decision_callback(decision_data)
             except Exception as cb_err:
-                logger.error(f"Decision callback error: {cb_err}")
+                logger.error("Decision callback error: %s", cb_err)
 
         logger.info(
             f"LLM Player {self.player_id} chose {chosen_action.action_type.value} "

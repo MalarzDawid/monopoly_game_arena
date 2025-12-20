@@ -1,9 +1,11 @@
 """
 Database configuration using pydantic-settings.
 
-Handles environment variables and provides type-safe config access.
+Handles environment variables and provides type-safe config access,
+including basic validation of connection URLs and secrets.
 """
 
+import os
 from functools import lru_cache
 from typing import Optional
 
@@ -58,6 +60,13 @@ class DatabaseSettings(BaseSettings):
         """Ensure async URL uses asyncpg driver."""
         if not v.startswith("postgresql+asyncpg://"):
             raise ValueError("DATABASE_URL must use postgresql+asyncpg:// scheme")
+        # Basic secret hygiene: disallow default password outside debug environments.
+        debug_env = os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}
+        if "monopoly_pass" in v and not debug_env:
+            raise ValueError(
+                "DATABASE_URL is using the default 'monopoly_pass' password. "
+                "Change it in production or unset DEBUG."
+            )
         return v
 
     @field_validator("database_url_sync")
@@ -66,6 +75,12 @@ class DatabaseSettings(BaseSettings):
         """Ensure sync URL uses standard postgres driver."""
         if not v.startswith("postgresql://"):
             raise ValueError("DATABASE_URL_SYNC must use postgresql:// scheme")
+        debug_env = os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}
+        if "monopoly_pass" in v and not debug_env:
+            raise ValueError(
+                "DATABASE_URL_SYNC is using the default 'monopoly_pass' password. "
+                "Change it in production or unset DEBUG."
+            )
         return v
 
     def get_engine_kwargs(self) -> dict:
