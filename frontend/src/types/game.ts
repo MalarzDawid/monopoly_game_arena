@@ -54,6 +54,7 @@ export interface GameStatus {
   phase: string
   actors: number[]
   roles: string[]
+  llm_strategies?: string[]
   game_over: boolean
   paused: boolean
   tick_ms: number

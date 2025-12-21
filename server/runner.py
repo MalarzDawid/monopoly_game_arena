@@ -477,6 +477,7 @@ class GameRunner:
             "phase": phase,
             "actors": actors,
             "roles": self.roles,
+            "llm_strategies": self.llm_strategies,
             "game_over": self.game.game_over,
             "paused": self._paused,
             "tick_ms": int(self._tick * 1000),

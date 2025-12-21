@@ -73,6 +73,7 @@ export function WatchPage() {
     phase: 'turn',
     actors: [1],
     roles: ['greedy', 'greedy', 'greedy', 'greedy'],
+    llm_strategies: ['balanced', 'balanced', 'balanced', 'balanced'],
     game_over: false,
     paused: false,
     tick_ms: 500,
@@ -353,6 +354,8 @@ export function WatchPage() {
           players={displaySnapshot.players}
           currentPlayerId={displaySnapshot.current_player_id}
           stats={liveStats}
+          roles={displayStatus.roles}
+          llmStrategies={displayStatus.llm_strategies}
           loading={isLoading}
         />
       )}

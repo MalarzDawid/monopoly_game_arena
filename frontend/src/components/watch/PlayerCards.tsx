@@ -9,7 +9,28 @@ interface PlayerCardsProps {
   players: Player[]
   currentPlayerId: number
   stats?: PlayerLiveStats[]
+  roles?: string[]
+  llmStrategies?: string[]
   loading?: boolean
+}
+
+function formatAgentLabel(role: string, strategy?: string): string {
+  const roleLabels: Record<string, string> = {
+    greedy: 'Greedy',
+    random: 'Random',
+    llm: 'LLM',
+    human: 'Human',
+  }
+  const strategyLabels: Record<string, string> = {
+    aggressive: 'Aggressive',
+    balanced: 'Balanced',
+    defensive: 'Defensive',
+  }
+  const roleLabel = roleLabels[role] || role
+  if (role === 'llm' && strategy) {
+    return `${roleLabel} · ${strategyLabels[strategy] || strategy}`
+  }
+  return roleLabel
 }
 
 const PLAYER_COLORS = [
@@ -27,7 +48,7 @@ function findStats(stats: PlayerLiveStats[] | undefined, playerId: number): Play
   return stats?.find((s) => s.player_id === playerId)
 }
 
-export function PlayerCards({ players, currentPlayerId, stats, loading = false }: PlayerCardsProps) {
+export function PlayerCards({ players, currentPlayerId, stats, roles, llmStrategies, loading = false }: PlayerCardsProps) {
   if (loading) {
     return (
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -67,6 +88,11 @@ export function PlayerCards({ players, currentPlayerId, stats, loading = false }
                 </div>
                 <div>
                   <p className="font-medium">{player.name}</p>
+                  {roles && roles[player.player_id] && (
+                    <p className="text-xs text-muted-foreground">
+                      {formatAgentLabel(roles[player.player_id], llmStrategies?.[player.player_id])}
+                    </p>
+                  )}
                   <p className="text-lg font-bold">{formatCurrency(player.cash)}</p>
                 </div>
               </div>
