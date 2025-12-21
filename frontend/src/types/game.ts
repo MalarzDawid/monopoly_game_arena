@@ -207,6 +207,7 @@ export interface CreateGameRequest {
   max_turns?: number
   tick_ms?: number
   llm_strategy?: string
+  llm_strategies?: string[]  // Per-player LLM strategies
 }
 
 export interface CreateGameResponse {

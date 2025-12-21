@@ -80,6 +80,7 @@ class CreateGameRequest(BaseModel):
     max_turns: Optional[int] = Field(default=100, ge=1)
     tick_ms: Optional[int] = Field(default=500, ge=0, le=10000)
     llm_strategy: str = Field("balanced", pattern=r"^(aggressive|balanced|defensive)$")
+    llm_strategies: Optional[list[str]] = None  # Per-player LLM strategies
 
 
 class CreateGameResponse(BaseModel):
@@ -96,6 +97,7 @@ async def create_game(req: CreateGameRequest):
         roles=req.roles,
         tick_ms=req.tick_ms,
         llm_strategy=req.llm_strategy,
+        llm_strategies=req.llm_strategies,
     )
     return CreateGameResponse(game_id=gid)
 

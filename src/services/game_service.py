@@ -35,6 +35,7 @@ class GameService:
         roles: Optional[List[str]],
         tick_ms: Optional[int],
         llm_strategy: str,
+        llm_strategies: Optional[List[str]] = None,
     ) -> tuple[str, GameState, List[Agent]]:
         """Create game state, persist metadata, and build agents."""
         game_id = uuid.uuid4().hex[:12]
@@ -67,7 +68,7 @@ class GameService:
                 agent_type=agent_type,
             )
 
-        agents = self._build_agents(players, roles, llm_strategy=llm_strategy)
+        agents = self._build_agents(players, roles, llm_strategy=llm_strategy, llm_strategies=llm_strategies)
         return game_id, game, agents
 
     async def update_status(
@@ -173,7 +174,13 @@ class GameService:
             return base[:n]
         return base + [f"P{i}" for i in range(len(base), n)]
 
-    def _build_agents(self, players: List[Player], roles: List[str], llm_strategy: str) -> List[Agent]:
+    def _build_agents(
+        self,
+        players: List[Player],
+        roles: List[str],
+        llm_strategy: str,
+        llm_strategies: Optional[List[str]] = None,
+    ) -> List[Agent]:
         agents: List[Optional[Agent]] = [None] * len(players)
         for i, role in enumerate(roles):
             name = players[i].name
@@ -182,7 +189,13 @@ class GameService:
             elif role == "random":
                 agents[i] = RandomAgent(i, name)
             elif role == "llm":
-                agents[i] = LLMAgent(i, name, strategy=llm_strategy)
+                # Use per-player strategy if available, otherwise fallback to global
+                strategy = (
+                    llm_strategies[i]
+                    if llm_strategies and i < len(llm_strategies) and llm_strategies[i]
+                    else llm_strategy
+                )
+                agents[i] = LLMAgent(i, name, strategy=strategy)
             else:
                 agents[i] = GreedyAgent(i, name)
         return agents

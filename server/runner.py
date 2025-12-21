@@ -37,6 +37,7 @@ class GameRunner:
         roles: Optional[List[str]] = None,
         tick_ms: Optional[int] = 500,
         llm_strategy: str = "balanced",
+        llm_strategies: Optional[List[str]] = None,
         game_repo: Optional[GameRepository] = None,
         game_service: Optional[GameService] = None,
     ):
@@ -44,6 +45,7 @@ class GameRunner:
         self.game = game
         self.agent_type = agent_type
         self.llm_strategy = llm_strategy
+        self.llm_strategies = llm_strategies
         # DB persistence handled via GameService; logger only writes JSONL
         self.logger = GameLogger(game_id=None)
         self._task: Optional[asyncio.Task] = None
@@ -107,10 +109,16 @@ class GameRunner:
                 elif role == "random":
                     self.agents[i] = RandomAgent(i, names[i])
                 elif role == "llm":
+                    # Use per-player strategy if available, otherwise fallback to global
+                    strategy = (
+                        self.llm_strategies[i]
+                        if self.llm_strategies and i < len(self.llm_strategies) and self.llm_strategies[i]
+                        else self.llm_strategy
+                    )
                     self.agents[i] = LLMAgent(
                         i,
                         names[i],
-                        strategy=self.llm_strategy,
+                        strategy=strategy,
                         decision_callback=llm_decision_callback,
                     )
                 else:

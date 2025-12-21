@@ -28,6 +28,7 @@ class GameRegistry:
         roles: Optional[list[str]] = None,
         tick_ms: Optional[int] = 500,
         llm_strategy: str = "balanced",
+        llm_strategies: Optional[list[str]] = None,
     ) -> str:
         game_id = uuid.uuid4().hex[:12]
 
@@ -42,6 +43,7 @@ class GameRegistry:
                 roles=roles,
                 tick_ms=tick_ms,
                 llm_strategy=llm_strategy,
+                llm_strategies=llm_strategies,
             )
             game_id = gid
             runner = GameRunner(
@@ -52,6 +54,7 @@ class GameRegistry:
                 roles=roles,
                 tick_ms=tick_ms,
                 llm_strategy=llm_strategy,
+                llm_strategies=llm_strategies,
                 game_repo=repo,
                 game_service=service,
             )

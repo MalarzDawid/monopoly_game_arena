@@ -31,6 +31,7 @@ interface CreateConfig {
   maxTurns: number
   tickMs: number
   llmStrategy: LlmStrategy
+  llmStrategies: LlmStrategy[]
   roles: AgentRole[]
 }
 
@@ -43,6 +44,7 @@ export function WatchPage() {
     maxTurns: 100,
     tickMs: 500,
     llmStrategy: 'balanced',
+    llmStrategies: ['balanced', 'balanced', 'balanced', 'balanced'],
     roles: ['greedy', 'greedy', 'greedy', 'greedy'],
   })
 
@@ -86,6 +88,8 @@ export function WatchPage() {
           ? createConfig.roles.slice(0, createConfig.players)
           : Array.from({ length: createConfig.players }, () => 'greedy' as AgentRole)
 
+      const llmStrategies = createConfig.llmStrategies.slice(0, createConfig.players)
+
       const agent: AgentRole = roles[0] ?? 'greedy'
 
       const result = await createGame.mutateAsync({
@@ -95,6 +99,7 @@ export function WatchPage() {
         max_turns: createConfig.maxTurns,
         tick_ms: createConfig.tickMs,
         llm_strategy: createConfig.llmStrategy,
+        llm_strategies: llmStrategies,
       })
       setGameId(result.game_id)
       setShowCreateForm(false)
@@ -158,14 +163,17 @@ export function WatchPage() {
                     setCreateConfig((prev) => {
                       const players = Number(v)
                       const roles = [...prev.roles]
+                      const llmStrategies = [...prev.llmStrategies]
                       if (roles.length < players) {
                         for (let i = roles.length; i < players; i += 1) {
                           roles.push('greedy')
+                          llmStrategies.push('balanced')
                         }
                       } else if (roles.length > players) {
                         roles.length = players
+                        llmStrategies.length = players
                       }
-                      return { ...prev, players, roles }
+                      return { ...prev, players, roles, llmStrategies }
                     })
                   }
                 >
@@ -211,41 +219,41 @@ export function WatchPage() {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-sm font-medium">LLM Strategy</label>
-                <Select
-                  value={createConfig.llmStrategy}
-                  onValueChange={(v) =>
-                    setCreateConfig((prev) => ({ ...prev, llmStrategy: v as LlmStrategy }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="aggressive">Aggressive</SelectItem>
-                    <SelectItem value="balanced">Balanced</SelectItem>
-                    <SelectItem value="defensive">Defensive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Player Roles</label>
-                <div className="mt-2 space-y-2">
-                  {Array.from({ length: createConfig.players }).map((_, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground w-16">
-                        Player {index + 1}
-                      </span>
+            <div className="mt-4">
+              <label className="text-sm font-medium">Player Roles</label>
+              <div className="mt-2 space-y-2">
+                {Array.from({ length: createConfig.players }).map((_, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-16">
+                      Player {index + 1}
+                    </span>
+                    <Select
+                      value={createConfig.roles[index] ?? 'greedy'}
+                      onValueChange={(v) =>
+                        setCreateConfig((prev) => {
+                          const roles = [...prev.roles]
+                          roles[index] = v as AgentRole
+                          return { ...prev, roles }
+                        })
+                      }
+                    >
+                      <SelectTrigger className="h-8 w-28">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="greedy">Greedy</SelectItem>
+                        <SelectItem value="random">Random</SelectItem>
+                        <SelectItem value="llm">LLM</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {createConfig.roles[index] === 'llm' && (
                       <Select
-                        value={createConfig.roles[index] ?? 'greedy'}
+                        value={createConfig.llmStrategies[index] ?? 'balanced'}
                         onValueChange={(v) =>
                           setCreateConfig((prev) => {
-                            const roles = [...prev.roles]
-                            roles[index] = v as AgentRole
-                            return { ...prev, roles }
+                            const llmStrategies = [...prev.llmStrategies]
+                            llmStrategies[index] = v as LlmStrategy
+                            return { ...prev, llmStrategies }
                           })
                         }
                       >
@@ -253,14 +261,14 @@ export function WatchPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="greedy">Greedy</SelectItem>
-                          <SelectItem value="random">Random</SelectItem>
-                          <SelectItem value="llm">LLM</SelectItem>
+                          <SelectItem value="aggressive">Aggressive</SelectItem>
+                          <SelectItem value="balanced">Balanced</SelectItem>
+                          <SelectItem value="defensive">Defensive</SelectItem>
                         </SelectContent>
                       </Select>
-                    </div>
-                  ))}
-                </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
 
