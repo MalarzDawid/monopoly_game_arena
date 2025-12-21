@@ -82,4 +82,4 @@ else:
 
 ### Reference
 
-::: agents.random.RandomAgent
+::: core.agents.random.RandomAgent

@@ -28,6 +28,9 @@ LLMAgent can be configured via environment variables or constructor parameters:
 #### Environment Variables
 
 ```bash
+# Backend provider
+LLM_PROVIDER=ollama   # ollama | vllm | openai | custom
+
 # Base URL for OpenAI-compatible API
 LLM_BASE_URL=http://localhost:11434/v1  # Ollama (default)
 # LLM_BASE_URL=http://localhost:8000/v1  # vLLM
@@ -36,8 +39,11 @@ LLM_BASE_URL=http://localhost:11434/v1  # Ollama (default)
 LLM_MODEL=gemma3:4b                      # Ollama
 # LLM_MODEL=google/gemma-3-4b-it         # vLLM
 
+# Optional: authentication for hosted providers
+# LLM_API_KEY=your-secret-key
+
 # Optional: timeout and token limits
-LLM_TIMEOUT=30.0
+LLM_TIMEOUT_SECONDS=30
 LLM_MAX_TOKENS=512
 ```
 
@@ -49,10 +55,11 @@ from src.core.agents import LLMAgent
 agent = LLMAgent(
     player_id=0,
     name="Alice",
-    model_name="gemma3:4b",        # Optional, uses LLM_MODEL env var
-    strategy="balanced",            # aggressive, balanced, defensive
-    base_url="http://localhost:11434/v1",  # Optional, uses LLM_BASE_URL env var
-    decision_callback=my_callback,  # Optional, for logging decisions
+    model_name="gemma3:4b",               # Optional, uses LLM_MODEL env var
+    strategy="balanced",                  # aggressive, balanced, defensive
+    base_url="http://localhost:11434/v1", # Optional, uses LLM_BASE_URL env var
+    api_key="...",                        # Optional, uses LLM_API_KEY env var
+    decision_callback=my_callback,        # Optional, for logging decisions
 )
 ```
 
@@ -250,7 +257,7 @@ LLM decisions are logged to the `llm_decisions` table when using `GameRunner` or
 #### Querying Decisions
 
 ```python
-from server.database import session_scope, GameRepository
+from data import session_scope, GameRepository
 
 async with session_scope() as session:
     repo = GameRepository(session)
@@ -293,9 +300,9 @@ If the model frequently returns invalid JSON:
 #### Slow Responses
 
 1. Use a smaller model (e.g., gemma3:4b vs gemma3:27b)
-2. Increase timeout: `LLM_TIMEOUT=60`
+2. Increase timeout: `LLM_TIMEOUT_SECONDS=60`
 3. Consider local GPU acceleration
 
 ### Reference
 
-::: agents.llm.LLMAgent
+::: core.agents.llm.LLMAgent

@@ -1,6 +1,157 @@
 ## Quickstart
 
-This guide shows how to create a game, add players, make moves, and run simulations with different agents.
+This guide walks you from zero to a running stack: database, API server, web UI, dashboard, and programmatic access to the engine and agents.
+
+---
+
+## 1. Prerequisites
+
+Before you start, make sure you have:
+
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) (for dependency management)
+- Docker + Docker Compose (for PostgreSQL)
+
+Check your tools:
+
+```bash
+python --version
+uv --version
+docker --version
+docker compose version  # or: docker-compose --version
+```
+
+---
+
+## 2. Clone and install
+
+```bash
+git clone <YOUR_REPO_URL>
+cd monopolyv3
+
+# Create your environment configuration
+cp env.example .env
+
+# Install Python dependencies (creates .venv and installs the project)
+make install
+```
+
+---
+
+## 3. Configure environment
+
+Open `.env` in the project root and adjust it to your environment. The most important sections are:
+
+```bash
+# Database configuration
+DATABASE_URL=postgresql+asyncpg://monopoly_user:monopoly_pass@localhost:5432/monopoly_arena
+DATABASE_URL_SYNC=postgresql://monopoly_user:monopoly_pass@localhost:5432/monopoly_arena
+
+# LLM configuration
+LLM_PROVIDER=ollama
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_MODEL=gemma3:4b
+# LLM_API_KEY=your-secret-key
+
+# Dashboard / API configuration
+DASHBOARD_HOST=127.0.0.1
+DASHBOARD_PORT=8050
+MAIN_SERVER_URL=http://localhost:8000
+```
+
+You can always refer to `env.example` for all available options.
+
+Internally, these values are loaded via:
+
+- `data.config.DatabaseSettings` for database configuration
+- `settings.LLMSettings` for LLM configuration
+- `settings.DashboardSettings` for dashboard and API endpoints
+
+---
+
+## 4. Start PostgreSQL and apply migrations
+
+Start the database in Docker and bring the schema up to date:
+
+```bash
+# Start PostgreSQL container
+make db-up
+
+# Apply Alembic migrations
+make db-migrate
+```
+
+You can verify connectivity with:
+
+```bash
+make db-test
+```
+
+---
+
+## 5. Run the API server and web UI
+
+```bash
+make server
+```
+
+By default the server runs on `http://localhost:8000`.
+
+Key endpoints:
+
+- Web UI: `http://localhost:8000/ui/`
+- API docs: `http://localhost:8000/docs`
+
+---
+
+## 6. Run the analytics dashboard (optional)
+
+In a separate terminal:
+
+```bash
+make dashboard
+```
+
+The dashboard will be available at:
+
+- Dashboard: `http://localhost:8050`
+
+---
+
+## 7. CLI simulations
+
+You can run full games from the command line without the UI.
+
+```bash
+# Greedy agents (default)
+uv run python scripts/play_monopoly.py --players 4 --agent greedy --seed 42
+
+# Random agents
+uv run python scripts/play_monopoly.py --players 4 --agent random
+
+# LLM agents (requires a running LLM backend)
+uv run python scripts/play_monopoly.py --players 4 --agent llm --llm-strategy balanced
+```
+
+Useful flags:
+
+| Flag | Description |
+|------|-------------|
+| `--players` | Number of players (2‑8) |
+| `--agent` | Agent type: `random`, `greedy`, `llm` |
+| `--seed` | Deterministic RNG seed |
+| `--max-turns` | Optional turn limit |
+| `--llm-strategy` | LLM strategy: `aggressive`, `balanced`, `defensive` |
+| `--llm-model` | Model name (default from env) |
+| `--llm-base-url` | API base URL (default from env) |
+
+For batch runs, see the **Batch Games** section below.
+
+---
+
+## 8. Programmatic engine usage
+
+The following sections show how to use the core engine and agents directly from Python.
 
 ### Create a game
 
@@ -101,16 +252,19 @@ python -m vllm.entrypoints.openai.api_server --model google/gemma-3-4b-it
 
 **Configuration via environment variables:**
 ```bash
-# .env file
+# .env file (see env.example for full list)
+LLM_PROVIDER=ollama
 LLM_BASE_URL=http://localhost:11434/v1  # Ollama
 LLM_MODEL=gemma3:4b
+LLM_TIMEOUT_SECONDS=30
+LLM_MAX_TOKENS=512
 ```
 
 **Usage:**
 ```python
-from agents import LLMAgent
+from src.core.agents import LLMAgent
 
-# Uses environment variables by default
+# Uses environment variables (LLM_*) by default
 agent = LLMAgent(0, "AI Player")
 
 # Or configure explicitly
@@ -122,33 +276,6 @@ agent = LLMAgent(
     base_url="http://localhost:11434/v1",
 )
 ```
-
-### CLI simulation
-
-Run a complete simulation using the CLI script.
-
-```bash
-# Greedy agents (default)
-PYTHONPATH=$(pwd) uv run python play_monopoly.py --players 4 --agent greedy --seed 42
-
-# Random agents
-uv run python play_monopoly.py --players 4 --agent random
-
-# LLM agents
-uv run python play_monopoly.py --players 4 --agent llm --llm-strategy balanced
-```
-
-Flags:
-
-| Flag | Description |
-|------|-------------|
-| `--players` | Number of players (2-8) |
-| `--agent` | Agent type: `random`, `greedy`, `llm` |
-| `--seed` | Deterministic RNG seed |
-| `--max-turns` | Optional turn limit |
-| `--llm-strategy` | LLM strategy: `aggressive`, `balanced`, `defensive` |
-| `--llm-model` | Model name (default from env) |
-| `--llm-base-url` | API base URL (default from env) |
 
 ### Batch Games
 

@@ -7,8 +7,10 @@ Abstract base class that all Monopoly agents must inherit from.
 ```python
 from abc import ABC, abstractmethod
 from typing import List
-from monopoly.game import GameState
-from monopoly.rules import Action
+
+from core.game import GameState
+from core.game.rules import Action
+
 
 class Agent(ABC):
     player_id: int
@@ -93,4 +95,4 @@ class ConservativeAgent(Agent):
 
 ### Reference
 
-::: agents.base.Agent
+::: core.agents.base.Agent

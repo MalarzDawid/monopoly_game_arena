@@ -42,11 +42,15 @@ A deterministic, fully-tested Monopoly rules engine designed for AI agent compet
 ## Installation
 
 ```bash
-# Clone repository
-git clone https://github.com/your-repo/monopoly_game_arena.git
-cd monopoly_game_arena
+# Clone repository (replace with your URL)
+git clone <YOUR_REPO_URL>
+cd monopolyv3
 
-# Install dependencies
+# Copy and configure environment
+cp env.example .env
+# Edit .env to match your local setup (database, LLM, dashboard)
+
+# Install dependencies using uv
 make install
 
 # Set up database
@@ -62,10 +66,14 @@ make test
 ### CLI Simulation
 ```bash
 # With greedy agents
-uv run python play_monopoly.py --players 4 --agent greedy
+uv run python scripts/play_monopoly.py --players 4 --agent greedy
 
 # With LLM agents (requires Ollama or vLLM)
-uv run python play_monopoly.py --players 4 --agent llm --llm-strategy balanced
+uv run python scripts/play_monopoly.py --players 4 --agent llm --llm-strategy balanced
+
+# Or use Makefile shortcuts
+make play           # single game (defaults)
+make batch-llm      # batch of LLM games
 ```
 
 ### Web Server
@@ -76,25 +84,38 @@ make server
 
 ## LLM Configuration
 
-For LLMAgent, set environment variables:
+LLMAgent is configured via environment variables read by `LLMSettings` in `src/settings.py`.
 
 ```bash
-# Ollama (default)
+# Backend provider: ollama | vllm | openai | custom
+LLM_PROVIDER=ollama
+
+# Base URL for OpenAI-compatible API
+# - Ollama (default): http://localhost:11434/v1
+# - vLLM:             http://localhost:8000/v1
 LLM_BASE_URL=http://localhost:11434/v1
+
+# Model name / identifier
 LLM_MODEL=gemma3:4b
 
-# vLLM
-LLM_BASE_URL=http://localhost:8000/v1
-LLM_MODEL=google/gemma-3-4b-it
+# Optional API key (for OpenAI / secured vLLM deployments)
+# LLM_API_KEY=your-secret-key
+
+# Timeouts and limits
+LLM_TIMEOUT_SECONDS=30
+LLM_MAX_TOKENS=512
 ```
 
 ## Architecture Overview
 
 ```
-monopoly_game_arena/
-├── monopoly/          # Core game engine (pure logic)
-├── agents/            # AI agents (Random, Greedy, LLM)
-├── server/            # FastAPI + WebSocket + Database
+monopolyv3/
+├── src/core/          # Core game engine (pure logic)
+├── src/core/agents/   # AI agents (Random, Greedy, LLM)
+├── src/data/          # Database config, models, repository, sessions
+├── src/services/      # Application services (GameService, etc.)
+├── server/            # FastAPI app, registry, runner, dashboard API, static UI
+├── scripts/           # CLI tools (play_monopoly, batch_games, analyzers)
 ├── templates/         # LLM strategy prompts
 ├── docs/              # This documentation
 └── tests/             # Pytest test suite

@@ -13,10 +13,10 @@ for ev in events:
 
 ### Reference
 
-::: monopoly.money.EventType
+::: core.game.money.EventType
 
-::: monopoly.money.GameEvent
+::: core.game.money.GameEvent
 
-::: monopoly.money.EventLog
+::: core.game.money.EventLog
 
-::: monopoly.money.Bank
+::: core.game.money.Bank

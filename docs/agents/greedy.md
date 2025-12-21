@@ -46,7 +46,7 @@ flowchart TD
 
 ```python
 from src.core.agents import GreedyAgent
-from monopoly.rules import get_legal_actions, apply_action
+from src.core.game.rules import get_legal_actions, apply_action
 
 agent = GreedyAgent(player_id=0, name="Alice")
 
@@ -138,4 +138,4 @@ Same player_id + same game state = same decisions.
 
 ### Reference
 
-::: agents.greedy.GreedyAgent
+::: core.agents.greedy.GreedyAgent

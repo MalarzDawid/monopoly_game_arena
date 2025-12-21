@@ -49,10 +49,12 @@ class LLMAgent(Agent):
     4. Parses the JSON response and validates the action
     5. Falls back to a safe action if parsing/validation fails
 
-    Configuration via environment variables:
+    Configuration via environment variables (see LLMSettings in `settings.py`):
+        LLM_PROVIDER: Backend provider (ollama | vllm | openai | custom)
         LLM_BASE_URL: Base URL for API (default: http://localhost:11434/v1 for Ollama)
         LLM_MODEL: Model name (default: gemma3:4b)
-        LLM_TIMEOUT: Request timeout in seconds (default: 30)
+        LLM_API_KEY: Optional API key for authenticated providers
+        LLM_TIMEOUT_SECONDS: Request timeout in seconds (default: 30)
         LLM_MAX_TOKENS: Max response tokens (default: 512)
 
     Attributes:

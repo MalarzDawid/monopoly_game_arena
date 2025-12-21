@@ -5,7 +5,7 @@ Game configuration tweaks core rules and limits.
 Example:
 
 ```python
-from monopoly import GameConfig
+from core import GameConfig
 
 cfg = GameConfig(
     starting_cash=1500,
@@ -22,4 +22,4 @@ cfg = GameConfig(
 
 ### Reference
 
-::: monopoly.config.GameConfig
+::: core.game.config.GameConfig
