@@ -106,11 +106,19 @@ class GameService:
     ) -> None:
         """Persist queued LLM decisions."""
         for decision in decisions:
+            # Ensure sequence_number is globally unique per game to satisfy DB constraint.
+            # LLMAgent provides a per-player sequence; we combine it with turn_number and player_id
+            # to avoid collisions across multiple LLM players.
+            base_seq = int(decision.get("sequence_number", 0) or 0)
+            turn_num = int(decision.get("turn_number", 0) or 0)
+            player_id = int(decision.get("player_id", 0) or 0)
+            sequence_number = turn_num * 10_000 + player_id * 1_000 + base_seq
+
             await self.repo.add_llm_decision(
                 game_uuid=game_uuid,
                 player_id=decision["player_id"],
                 turn_number=decision["turn_number"],
-                sequence_number=decision.get("sequence_number", 0),
+                sequence_number=sequence_number,
                 game_state=decision.get("game_state", {}),
                 player_state=decision.get("player_state", {}),
                 available_actions=decision.get("available_actions", {}),

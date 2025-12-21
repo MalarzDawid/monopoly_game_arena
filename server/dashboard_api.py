@@ -212,3 +212,37 @@ async def latest_events_for_game(game_id: str, limit: int = 10, session: AsyncSe
     """
     rows = await _fetch_all(session, query, {"game_id": game_id, "limit": limit})
     return list(reversed(rows))
+
+
+@router.get("/games/{game_id}/llm_decisions")
+async def llm_decisions_for_game(
+    game_id: str,
+    player_id: Optional[int] = None,
+    limit: int = 100,
+    session: AsyncSession = Depends(get_session),
+) -> List[Dict[str, Any]]:
+    """
+    Return LLM decisions for a given game (optionally filtered by player).
+    """
+    base_query = """
+        SELECT
+            d.sequence_number,
+            d.turn_number,
+            d.player_id,
+            d.timestamp,
+            d.reasoning,
+            d.chosen_action,
+            d.strategy_description,
+            d.processing_time_ms,
+            d.model_version
+        FROM llm_decisions d
+        JOIN games g ON d.game_uuid = g.id
+        WHERE g.game_id = :game_id
+    """
+    params: Dict[str, Any] = {"game_id": game_id, "limit": limit}
+    if player_id is not None:
+        base_query += " AND d.player_id = :player_id"
+        params["player_id"] = player_id
+
+    base_query += " ORDER BY d.sequence_number LIMIT :limit"
+    return await _fetch_all(session, base_query, params)

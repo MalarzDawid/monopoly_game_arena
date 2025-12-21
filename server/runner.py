@@ -107,9 +107,19 @@ class GameRunner:
                 elif role == "random":
                     self.agents[i] = RandomAgent(i, names[i])
                 elif role == "llm":
-                    self.agents[i] = LLMAgent(i, names[i], strategy=self.llm_strategy, decision_callback=llm_decision_callback)
+                    self.agents[i] = LLMAgent(
+                        i,
+                        names[i],
+                        strategy=self.llm_strategy,
+                        decision_callback=llm_decision_callback,
+                    )
                 else:
                     self.agents[i] = GreedyAgent(i, names[i])
+
+        # Ensure all LLMAgents (even pre-built ones) have the decision callback wired
+        for agent in self.agents:
+            if isinstance(agent, LLMAgent):
+                agent.decision_callback = llm_decision_callback
 
     async def start(self) -> None:
         # Flush initial GAME_START and TURN_START
@@ -117,23 +127,19 @@ class GameRunner:
         # Mark game as running in the database and fetch game_uuid
         try:
             async with session_scope() as session:
-                repo = self._game_repo or GameRepository(session)
+                repo = GameRepository(session)
+                service = GameService(repo)
                 # Fetch game to get UUID for LLM decision logging
                 db_game = await repo.get_game_by_id(self.game_id)
                 if db_game:
                     self._game_uuid = db_game.id
                     logger.info(f"Game {self.game_id} has UUID {self._game_uuid}")
-                await repo.update_game_status(
+                # Update status via service (which wraps repository)
+                await service.update_status(
                     game_id=self.game_id,
                     status="running",
                     started_at=datetime.now(timezone.utc),
                 )
-                if self._game_service:
-                    await self._game_service.update_status(
-                        game_id=self.game_id,
-                        status="running",
-                        started_at=datetime.now(timezone.utc),
-                    )
         except MonopolyError as e:
             # Domain-level error during startup; log and continue best-effort.
             logger.warning("Domain error while starting game %s: %s", self.game_id, e)
@@ -363,7 +369,7 @@ class GameRunner:
         if mapped and self._game_uuid:
             try:
                 async with session_scope() as session:
-                    repo = self._game_repo or GameRepository(session)
+                    repo = GameRepository(session)
                     service = GameService(repo)
                     batch = []
                     for idx, e in enumerate(mapped):
@@ -397,7 +403,7 @@ class GameRunner:
 
         try:
             async with session_scope() as session:
-                repo = self._game_repo or GameRepository(session)
+                repo = GameRepository(session)
                 service = GameService(repo)
                 await service.persist_llm_decisions(self._game_uuid, decisions_to_save)
         except Exception as e:
