@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -15,22 +14,25 @@ from core.game.spaces import PropertySpace, RailroadSpace, UtilitySpace
 
 from core.agents.base import Agent
 from core.exceptions import LLMError
+from settings import get_llm_settings
 
 logger = logging.getLogger(__name__)
 
 # Template directory (project root / templates)
 TEMPLATES_DIR = Path(__file__).resolve().parents[3] / "templates"
 
-# LLM Configuration from environment variables
-# Both vLLM and Ollama support OpenAI-compatible API at /v1/chat/completions
-# - Ollama: http://localhost:11434/v1 (default)
-# - vLLM: http://localhost:8000/v1
-DEFAULT_LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
-DEFAULT_LLM_MODEL = os.getenv("LLM_MODEL", "gemma3:4b")
+# Central LLM configuration
+_llm_settings = get_llm_settings()
+
+DEFAULT_LLM_BASE_URL = _llm_settings.base_url or "http://localhost:11434/v1"
+DEFAULT_LLM_MODEL = _llm_settings.model
+DEFAULT_LLM_API_KEY = (
+    _llm_settings.api_key.get_secret_value() if _llm_settings.api_key is not None else None
+)
 
 # Timeouts and limits
-LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT", "30.0"))
-MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "512"))
+LLM_TIMEOUT_SECONDS = float(_llm_settings.timeout_seconds)
+MAX_TOKENS = int(_llm_settings.max_tokens)
 
 
 class LLMAgent(Agent):
@@ -72,6 +74,7 @@ class LLMAgent(Agent):
         model_name: str = None,
         strategy: str = "balanced",
         base_url: str = None,
+        api_key: Optional[str] = None,
         decision_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
         """
@@ -80,15 +83,17 @@ class LLMAgent(Agent):
         Args:
             player_id: The player's index in the game.
             name: The player's display name.
-            model_name: The LLM model to use (default from LLM_MODEL env var).
+            model_name: The LLM model to use (default from LLM settings).
             strategy: Strategy template (aggressive, balanced, defensive).
-            base_url: Base URL for OpenAI-compatible API (default from LLM_BASE_URL env var).
+            base_url: Base URL for OpenAI-compatible API (default from LLM settings).
+            api_key: Optional API key for providers that require authentication.
             decision_callback: Optional callback(decision_data) for DB logging.
         """
         super().__init__(player_id, name)
         self.model_name = model_name or DEFAULT_LLM_MODEL
         self.strategy = strategy if strategy in self.STRATEGIES else "balanced"
         self.base_url = base_url or DEFAULT_LLM_BASE_URL
+        self.api_key = api_key if api_key is not None else DEFAULT_LLM_API_KEY
         self.decision_callback = decision_callback
         # Allow injected client; fallback to lazy creation
         self._client: Optional[httpx.Client] = None
@@ -361,8 +366,17 @@ class LLMAgent(Agent):
             "stop": ["\n\n", "```"],
         }
 
+        headers: Dict[str, str] = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
         client = self._client or httpx.Client(timeout=LLM_TIMEOUT_SECONDS)
-        response = client.post(url, json=payload, timeout=LLM_TIMEOUT_SECONDS)
+        response = client.post(
+            url,
+            json=payload,
+            headers=headers or None,
+            timeout=LLM_TIMEOUT_SECONDS,
+        )
         response.raise_for_status()
 
         result = response.json()

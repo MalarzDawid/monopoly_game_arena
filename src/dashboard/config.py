@@ -3,30 +3,29 @@ Dashboard configuration.
 
 Loads settings from environment variables and provides constants
 for the dashboard application.
+
+Configuration is managed via `settings.DashboardSettings` (pydantic-settings)
+to ensure type safety and a single source of truth.
 """
 
-import os
 from pathlib import Path
 
-# Database configuration
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://monopoly_user:monopoly_pass@localhost:5432/monopoly_arena"
-)
+from settings import get_dashboard_settings
 
-# Convert async URL to sync if needed
-if DATABASE_URL.startswith("postgresql+asyncpg://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+_settings = get_dashboard_settings()
+
+# Database configuration (sync URL for dashboard)
+DATABASE_URL = _settings.database_url
 
 # Dashboard server settings
-DASHBOARD_HOST = os.getenv("DASHBOARD_HOST", "127.0.0.1")
-DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "8050"))
-DASHBOARD_DEBUG = os.getenv("DASHBOARD_DEBUG", "true").lower() == "true"
+DASHBOARD_HOST = _settings.dashboard_host
+DASHBOARD_PORT = _settings.dashboard_port
+DASHBOARD_DEBUG = _settings.dashboard_debug
 
 # Main server URL (for API calls)
-MAIN_SERVER_URL = os.getenv("MAIN_SERVER_URL", "http://localhost:8000")
+MAIN_SERVER_URL = _settings.main_server_url
 # API base for dashboard data (can be same as MAIN_SERVER_URL)
-API_BASE_URL = os.getenv("API_BASE_URL", MAIN_SERVER_URL)
+API_BASE_URL = _settings.api_base_url
 
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent
