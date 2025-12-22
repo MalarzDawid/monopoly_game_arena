@@ -184,6 +184,8 @@ class GameRepository:
         player_id: int,
         name: str,
         agent_type: str,
+        llm_model_name: Optional[str] = None,
+        llm_strategy_profile: Optional[Dict[str, Any]] = None,
     ) -> Player:
         """
         Add a player to a game.
@@ -193,6 +195,8 @@ class GameRepository:
             player_id: Player ID within the game (0, 1, 2, ...)
             name: Player display name
             agent_type: Agent type (greedy | random | human | llm)
+            llm_model_name: LLM model name (for LLM agents)
+            llm_strategy_profile: LLM strategy profile dict (for LLM agents)
 
         Returns:
             Created Player instance
@@ -202,6 +206,8 @@ class GameRepository:
             player_id=player_id,
             name=name,
             agent_type=agent_type,
+            llm_model_name=llm_model_name,
+            llm_strategy_profile=llm_strategy_profile,
         )
 
         self.session.add(player)

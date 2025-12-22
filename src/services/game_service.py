@@ -15,6 +15,7 @@ from core.game.game import ActionType
 from core.game.rules import Action, apply_action, get_legal_actions
 from data import GameRepository
 from core.exceptions import InvalidActionError, MonopolyError
+from settings import get_llm_settings
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +60,32 @@ class GameService:
             metadata={"created_by": "service"},
         )
 
+        # Get LLM settings for model name
+        llm_settings = get_llm_settings()
+
         for i, player in enumerate(players):
             agent_type = roles[i] if roles else agent
+
+            # Prepare LLM-specific fields if this is an LLM agent
+            llm_model_name = None
+            llm_strategy_profile = None
+            if agent_type == "llm":
+                llm_model_name = llm_settings.model
+                # Get strategy for this player
+                strategy_name = (
+                    llm_strategies[i]
+                    if llm_strategies and i < len(llm_strategies) and llm_strategies[i]
+                    else llm_strategy
+                )
+                llm_strategy_profile = {"name": strategy_name}
+
             await self.repo.add_player(
                 game_uuid=db_game.id,
                 player_id=i,
                 name=player.name,
                 agent_type=agent_type,
+                llm_model_name=llm_model_name,
+                llm_strategy_profile=llm_strategy_profile,
             )
 
         agents = self._build_agents(players, roles, llm_strategy=llm_strategy, llm_strategies=llm_strategies)

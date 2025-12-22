@@ -301,19 +301,38 @@ async def model_leaderboard(session: AsyncSession = Depends(get_session)) -> Lis
     """
     Leaderboard grouping by model/agent type with win rates and average ROI.
     Groups LLM players by llm_model_name and non-LLM by agent_type.
+    Falls back to llm_decisions table for older games without player LLM info.
     """
     query = """
-        WITH player_performance AS (
+        WITH llm_decision_info AS (
+            -- Get model info from llm_decisions for fallback
+            SELECT DISTINCT ON (d.game_uuid, d.player_id)
+                d.game_uuid,
+                d.player_id,
+                d.model_version,
+                d.strategy_description
+            FROM llm_decisions d
+            ORDER BY d.game_uuid, d.player_id, d.sequence_number DESC
+        ),
+        player_performance AS (
             SELECT
                 p.game_uuid,
                 p.player_id,
                 p.agent_type,
                 CASE
-                    WHEN p.agent_type = 'llm' THEN COALESCE(p.llm_model_name, 'unknown_llm')
+                    WHEN p.agent_type = 'llm' THEN COALESCE(
+                        p.llm_model_name,
+                        ldi.model_version,
+                        'unknown_llm'
+                    )
                     ELSE p.agent_type
                 END as model_name,
                 CASE
-                    WHEN p.agent_type = 'llm' THEN COALESCE(p.llm_strategy_profile->>'name', 'Unknown')
+                    WHEN p.agent_type = 'llm' THEN COALESCE(
+                        p.llm_strategy_profile->>'name',
+                        ldi.strategy_description,
+                        'Unknown'
+                    )
                     ELSE 'Scripted'
                 END as strategy_profile,
                 p.is_winner,
@@ -322,6 +341,7 @@ async def model_leaderboard(session: AsyncSession = Depends(get_session)) -> Lis
                 p.final_cash
             FROM players p
             JOIN games g ON p.game_uuid = g.id
+            LEFT JOIN llm_decision_info ldi ON ldi.game_uuid = p.game_uuid AND ldi.player_id = p.player_id
             WHERE g.status = 'finished'
         )
         SELECT
@@ -350,7 +370,15 @@ async def luck_vs_skill(session: AsyncSession = Depends(get_session)) -> List[Di
     Scatter plot data: Average dice roll (luck) vs Win rate (skill) per model/agent.
     """
     query = """
-        WITH dice_rolls AS (
+        WITH llm_decision_info AS (
+            SELECT DISTINCT ON (d.game_uuid, d.player_id)
+                d.game_uuid,
+                d.player_id,
+                d.model_version
+            FROM llm_decisions d
+            ORDER BY d.game_uuid, d.player_id, d.sequence_number DESC
+        ),
+        dice_rolls AS (
             SELECT
                 e.game_uuid,
                 e.actor_player_id as player_id,
@@ -365,16 +393,21 @@ async def luck_vs_skill(session: AsyncSession = Depends(get_session)) -> List[Di
                 p.game_uuid,
                 p.player_id,
                 CASE
-                    WHEN p.agent_type = 'llm' THEN COALESCE(p.llm_model_name, 'unknown_llm')
+                    WHEN p.agent_type = 'llm' THEN COALESCE(
+                        p.llm_model_name,
+                        ldi.model_version,
+                        'unknown_llm'
+                    )
                     ELSE p.agent_type
                 END as model_name,
                 p.is_winner,
                 AVG(dr.roll_total) as avg_dice
             FROM players p
             JOIN games g ON p.game_uuid = g.id
+            LEFT JOIN llm_decision_info ldi ON ldi.game_uuid = p.game_uuid AND ldi.player_id = p.player_id
             LEFT JOIN dice_rolls dr ON dr.game_uuid = p.game_uuid AND dr.player_id = p.player_id
             WHERE g.status = 'finished'
-            GROUP BY p.game_uuid, p.player_id, p.agent_type, p.llm_model_name, p.is_winner
+            GROUP BY p.game_uuid, p.player_id, p.agent_type, p.llm_model_name, ldi.model_version, p.is_winner
         )
         SELECT
             model_name,
@@ -454,6 +487,88 @@ async def kill_zones(session: AsyncSession = Depends(get_session)) -> List[Dict[
         row["property_name"] = property_names.get(pos, f"Position {pos}")
 
     return rows
+
+
+@router.get("/strategy_property_correlation")
+async def strategy_property_correlation(session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
+    """
+    Heatmap data showing which property groups each strategy tends to purchase.
+    Returns purchase counts grouped by strategy and property color group.
+    """
+    # Property position to color group mapping
+    property_groups = {
+        1: "Brown", 3: "Brown",
+        6: "Light Blue", 8: "Light Blue", 9: "Light Blue",
+        11: "Pink", 13: "Pink", 14: "Pink",
+        16: "Orange", 18: "Orange", 19: "Orange",
+        21: "Red", 23: "Red", 24: "Red",
+        26: "Yellow", 27: "Yellow", 29: "Yellow",
+        31: "Green", 32: "Green", 34: "Green",
+        37: "Dark Blue", 39: "Dark Blue",
+        5: "Railroad", 15: "Railroad", 25: "Railroad", 35: "Railroad",
+        12: "Utility", 28: "Utility",
+    }
+
+    query = """
+        WITH llm_decision_info AS (
+            SELECT DISTINCT ON (d.game_uuid, d.player_id)
+                d.game_uuid,
+                d.player_id,
+                d.strategy_description
+            FROM llm_decisions d
+            ORDER BY d.game_uuid, d.player_id, d.sequence_number DESC
+        ),
+        player_strategies AS (
+            SELECT
+                p.game_uuid,
+                p.player_id,
+                CASE
+                    WHEN p.agent_type = 'llm' THEN COALESCE(
+                        p.llm_strategy_profile->>'name',
+                        ldi.strategy_description,
+                        'Unknown'
+                    )
+                    WHEN p.agent_type = 'greedy' THEN 'Greedy'
+                    WHEN p.agent_type = 'random' THEN 'Random'
+                    ELSE p.agent_type
+                END as strategy
+            FROM players p
+            LEFT JOIN llm_decision_info ldi ON ldi.game_uuid = p.game_uuid AND ldi.player_id = p.player_id
+        ),
+        purchases AS (
+            SELECT
+                e.game_uuid,
+                e.actor_player_id as player_id,
+                (e.payload->>'position')::int as position
+            FROM game_events e
+            WHERE e.event_type = 'purchase'
+                AND e.payload->>'position' IS NOT NULL
+        )
+        SELECT
+            ps.strategy,
+            p.position,
+            COUNT(*) as purchase_count
+        FROM purchases p
+        JOIN player_strategies ps ON ps.game_uuid = p.game_uuid AND ps.player_id = p.player_id
+        WHERE ps.strategy IS NOT NULL
+        GROUP BY ps.strategy, p.position
+        ORDER BY ps.strategy, p.position
+    """
+    rows = await _fetch_all(session, query, {})
+
+    # Group by strategy and add color group info
+    result = []
+    for row in rows:
+        position = row.get("position")
+        color_group = property_groups.get(position, "Other")
+        result.append({
+            "strategy": row["strategy"],
+            "position": position,
+            "color_group": color_group,
+            "purchase_count": row["purchase_count"],
+        })
+
+    return result
 
 
 @router.get("/game_duration_histogram")
