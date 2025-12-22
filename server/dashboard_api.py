@@ -246,3 +246,241 @@ async def llm_decisions_for_game(
 
     base_query += " ORDER BY d.sequence_number LIMIT :limit"
     return await _fetch_all(session, base_query, params)
+
+
+# ============================================================================
+# GLOBAL ANALYTICS ENDPOINTS
+# ============================================================================
+
+@router.get("/global_stats")
+async def global_stats(session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """
+    Global KPI statistics across all games.
+    """
+    query = """
+        WITH game_stats AS (
+            SELECT
+                COUNT(*) as total_games,
+                SUM(total_turns) as total_turns,
+                COUNT(*) FILTER (WHERE status = 'finished') as finished_games
+            FROM games
+        ),
+        player_stats AS (
+            SELECT
+                COUNT(*) FILTER (WHERE is_bankrupt = true) as total_bankruptcies
+            FROM players
+        ),
+        event_stats AS (
+            SELECT
+                COUNT(*) FILTER (WHERE event_type = 'purchase') as total_properties_bought,
+                COUNT(*) FILTER (WHERE event_type IN ('purchase', 'trade', 'rent_payment', 'auction_end')) as total_transactions
+            FROM game_events
+        )
+        SELECT
+            gs.total_games,
+            COALESCE(gs.total_turns, 0) as total_turns,
+            gs.finished_games,
+            ps.total_bankruptcies,
+            es.total_properties_bought,
+            es.total_transactions
+        FROM game_stats gs, player_stats ps, event_stats es
+    """
+    row = await _fetch_one(session, query, {})
+    return row or {
+        "total_games": 0,
+        "total_turns": 0,
+        "finished_games": 0,
+        "total_bankruptcies": 0,
+        "total_properties_bought": 0,
+        "total_transactions": 0,
+    }
+
+
+@router.get("/model_leaderboard")
+async def model_leaderboard(session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
+    """
+    Leaderboard grouping by model/agent type with win rates and average ROI.
+    Groups LLM players by llm_model_name and non-LLM by agent_type.
+    """
+    query = """
+        WITH player_performance AS (
+            SELECT
+                p.game_uuid,
+                p.player_id,
+                p.agent_type,
+                CASE
+                    WHEN p.agent_type = 'llm' THEN COALESCE(p.llm_model_name, 'unknown_llm')
+                    ELSE p.agent_type
+                END as model_name,
+                CASE
+                    WHEN p.agent_type = 'llm' THEN COALESCE(p.llm_strategy_profile->>'name', 'Unknown')
+                    ELSE 'Scripted'
+                END as strategy_profile,
+                p.is_winner,
+                p.is_bankrupt,
+                p.final_net_worth,
+                p.final_cash
+            FROM players p
+            JOIN games g ON p.game_uuid = g.id
+            WHERE g.status = 'finished'
+        )
+        SELECT
+            model_name,
+            strategy_profile,
+            COUNT(DISTINCT game_uuid) as games_played,
+            SUM(CASE WHEN is_winner THEN 1 ELSE 0 END) as wins,
+            SUM(CASE WHEN is_bankrupt THEN 1 ELSE 0 END) as bankruptcies,
+            ROUND(
+                SUM(CASE WHEN is_winner THEN 1 ELSE 0 END)::numeric /
+                NULLIF(COUNT(*), 0) * 100,
+                2
+            ) as win_rate,
+            ROUND(AVG(COALESCE(final_net_worth, 0))::numeric, 0) as avg_net_worth,
+            ROUND(AVG(COALESCE(final_cash, 0))::numeric, 0) as avg_final_cash
+        FROM player_performance
+        GROUP BY model_name, strategy_profile
+        ORDER BY win_rate DESC NULLS LAST, games_played DESC
+    """
+    return await _fetch_all(session, query, {})
+
+
+@router.get("/luck_vs_skill")
+async def luck_vs_skill(session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
+    """
+    Scatter plot data: Average dice roll (luck) vs Win rate (skill) per model/agent.
+    """
+    query = """
+        WITH dice_rolls AS (
+            SELECT
+                e.game_uuid,
+                e.actor_player_id as player_id,
+                (e.payload->>'die1')::int + (e.payload->>'die2')::int as roll_total
+            FROM game_events e
+            WHERE e.event_type = 'dice_roll'
+                AND e.payload->>'die1' IS NOT NULL
+                AND e.payload->>'die2' IS NOT NULL
+        ),
+        player_dice_avg AS (
+            SELECT
+                p.game_uuid,
+                p.player_id,
+                CASE
+                    WHEN p.agent_type = 'llm' THEN COALESCE(p.llm_model_name, 'unknown_llm')
+                    ELSE p.agent_type
+                END as model_name,
+                p.is_winner,
+                AVG(dr.roll_total) as avg_dice
+            FROM players p
+            JOIN games g ON p.game_uuid = g.id
+            LEFT JOIN dice_rolls dr ON dr.game_uuid = p.game_uuid AND dr.player_id = p.player_id
+            WHERE g.status = 'finished'
+            GROUP BY p.game_uuid, p.player_id, p.agent_type, p.llm_model_name, p.is_winner
+        )
+        SELECT
+            model_name,
+            ROUND(AVG(avg_dice)::numeric, 2) as avg_dice_roll,
+            ROUND(
+                SUM(CASE WHEN is_winner THEN 1 ELSE 0 END)::numeric /
+                NULLIF(COUNT(*), 0) * 100,
+                2
+            ) as win_rate,
+            COUNT(*) as total_games
+        FROM player_dice_avg
+        WHERE avg_dice IS NOT NULL
+        GROUP BY model_name
+        HAVING COUNT(*) >= 1
+        ORDER BY win_rate DESC
+    """
+    return await _fetch_all(session, query, {})
+
+
+@router.get("/kill_zones")
+async def kill_zones(session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
+    """
+    Properties where most bankruptcies occurred (rent payments that led to bankruptcy).
+    Uses the position from the last rent_payment before a bankruptcy event.
+    """
+    # Property names mapping (Monopoly board positions)
+    property_names = {
+        1: "Mediterranean Ave", 3: "Baltic Ave",
+        6: "Oriental Ave", 8: "Vermont Ave", 9: "Connecticut Ave",
+        11: "St. Charles Place", 13: "States Ave", 14: "Virginia Ave",
+        16: "St. James Place", 18: "Tennessee Ave", 19: "New York Ave",
+        21: "Kentucky Ave", 23: "Indiana Ave", 24: "Illinois Ave",
+        26: "Atlantic Ave", 27: "Ventnor Ave", 29: "Marvin Gardens",
+        31: "Pacific Ave", 32: "North Carolina Ave", 34: "Pennsylvania Ave",
+        37: "Park Place", 39: "Boardwalk",
+        5: "Reading Railroad", 15: "Pennsylvania Railroad", 25: "B&O Railroad", 35: "Short Line",
+        12: "Electric Company", 28: "Water Works",
+    }
+
+    query = """
+        WITH bankruptcy_events AS (
+            SELECT
+                e.game_uuid,
+                e.actor_player_id as bankrupt_player_id,
+                e.sequence_number as bankruptcy_seq,
+                e.turn_number
+            FROM game_events e
+            WHERE e.event_type = 'bankruptcy'
+        ),
+        last_rent_before_bankruptcy AS (
+            SELECT DISTINCT ON (b.game_uuid, b.bankrupt_player_id)
+                b.game_uuid,
+                b.bankrupt_player_id,
+                (rent.payload->>'position')::int as position
+            FROM bankruptcy_events b
+            JOIN game_events rent ON
+                rent.game_uuid = b.game_uuid
+                AND rent.event_type = 'rent_payment'
+                AND rent.sequence_number < b.bankruptcy_seq
+                AND (rent.payload->>'payer_id')::int = b.bankrupt_player_id
+            ORDER BY b.game_uuid, b.bankrupt_player_id, rent.sequence_number DESC
+        )
+        SELECT
+            position,
+            COUNT(*) as bankruptcy_count
+        FROM last_rent_before_bankruptcy
+        WHERE position IS NOT NULL
+        GROUP BY position
+        ORDER BY bankruptcy_count DESC
+        LIMIT 20
+    """
+    rows = await _fetch_all(session, query, {})
+
+    # Add property names to results
+    for row in rows:
+        pos = row.get("position")
+        row["property_name"] = property_names.get(pos, f"Position {pos}")
+
+    return rows
+
+
+@router.get("/game_duration_histogram")
+async def game_duration_histogram(
+    bucket_size: int = Query(20, ge=5, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> List[Dict[str, Any]]:
+    """
+    Histogram of game durations (number of turns).
+    Returns buckets with counts of games that ended within each range.
+    """
+    query = """
+        WITH buckets AS (
+            SELECT
+                FLOOR(total_turns / :bucket_size) * :bucket_size as bucket_start,
+                FLOOR(total_turns / :bucket_size) * :bucket_size + :bucket_size - 1 as bucket_end,
+                COUNT(*) as game_count
+            FROM games
+            WHERE status = 'finished' AND total_turns > 0
+            GROUP BY FLOOR(total_turns / :bucket_size)
+        )
+        SELECT
+            bucket_start,
+            bucket_end,
+            CONCAT(bucket_start::text, '-', bucket_end::text) as bucket_label,
+            game_count
+        FROM buckets
+        ORDER BY bucket_start
+    """
+    return await _fetch_all(session, query, {"bucket_size": bucket_size})

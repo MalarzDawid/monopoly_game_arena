@@ -214,3 +214,52 @@ export interface CreateGameRequest {
 export interface CreateGameResponse {
   game_id: string
 }
+
+// ============================================================================
+// GLOBAL ANALYTICS TYPES
+// ============================================================================
+
+// Global KPI stats from /api/dashboard/global_stats
+export interface GlobalStats {
+  total_games: number
+  total_turns: number
+  finished_games: number
+  total_bankruptcies: number
+  total_properties_bought: number
+  total_transactions: number
+}
+
+// Model leaderboard entry from /api/dashboard/model_leaderboard
+export interface ModelLeaderboardEntry {
+  model_name: string
+  strategy_profile: string
+  games_played: number
+  wins: number
+  bankruptcies: number
+  win_rate: number | null
+  avg_net_worth: number
+  avg_final_cash: number
+}
+
+// Luck vs Skill data point from /api/dashboard/luck_vs_skill
+export interface LuckVsSkillData {
+  model_name: string
+  avg_dice_roll: number
+  win_rate: number | null
+  total_games: number
+}
+
+// Kill zone data from /api/dashboard/kill_zones
+export interface KillZoneData {
+  position: number
+  property_name: string
+  bankruptcy_count: number
+}
+
+// Game duration histogram bucket from /api/dashboard/game_duration_histogram
+export interface GameDurationBucket {
+  bucket_start: number
+  bucket_end: number
+  bucket_label: string
+  game_count: number
+}

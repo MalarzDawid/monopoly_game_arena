@@ -664,3 +664,132 @@ export function useRentByColorGroup(gameId: string | null, limit: number = 2000)
     retry: false,
   })
 }
+
+// ============================================================================
+// GLOBAL ANALYTICS HOOKS
+// ============================================================================
+
+import type {
+  GlobalStats,
+  ModelLeaderboardEntry,
+  LuckVsSkillData,
+  KillZoneData,
+  GameDurationBucket,
+} from '../types/game'
+
+// Mock data for fallback
+const mockGlobalStats: GlobalStats = {
+  total_games: 42,
+  total_turns: 3150,
+  finished_games: 38,
+  total_bankruptcies: 95,
+  total_properties_bought: 520,
+  total_transactions: 2340,
+}
+
+const mockModelLeaderboard: ModelLeaderboardEntry[] = [
+  { model_name: 'gemma3:4b', strategy_profile: 'Aggressive', games_played: 15, wins: 8, bankruptcies: 2, win_rate: 53.33, avg_net_worth: 4200, avg_final_cash: 1800 },
+  { model_name: 'greedy', strategy_profile: 'Scripted', games_played: 20, wins: 9, bankruptcies: 5, win_rate: 45.0, avg_net_worth: 3800, avg_final_cash: 1500 },
+  { model_name: 'random', strategy_profile: 'Scripted', games_played: 20, wins: 4, bankruptcies: 12, win_rate: 20.0, avg_net_worth: 1200, avg_final_cash: 400 },
+]
+
+const mockLuckVsSkill: LuckVsSkillData[] = [
+  { model_name: 'gemma3:4b', avg_dice_roll: 7.2, win_rate: 53.33, total_games: 15 },
+  { model_name: 'greedy', avg_dice_roll: 6.9, win_rate: 45.0, total_games: 20 },
+  { model_name: 'random', avg_dice_roll: 7.1, win_rate: 20.0, total_games: 20 },
+]
+
+const mockKillZones: KillZoneData[] = [
+  { position: 39, property_name: 'Boardwalk', bankruptcy_count: 12 },
+  { position: 37, property_name: 'Park Place', bankruptcy_count: 8 },
+  { position: 24, property_name: 'Illinois Ave', bankruptcy_count: 6 },
+  { position: 19, property_name: 'New York Ave', bankruptcy_count: 5 },
+]
+
+const mockDurationHistogram: GameDurationBucket[] = [
+  { bucket_start: 0, bucket_end: 19, bucket_label: '0-19', game_count: 2 },
+  { bucket_start: 20, bucket_end: 39, bucket_label: '20-39', game_count: 5 },
+  { bucket_start: 40, bucket_end: 59, bucket_label: '40-59', game_count: 12 },
+  { bucket_start: 60, bucket_end: 79, bucket_label: '60-79', game_count: 15 },
+  { bucket_start: 80, bucket_end: 99, bucket_label: '80-99', game_count: 4 },
+]
+
+export function useGlobalStats() {
+  return useQuery({
+    queryKey: ['globalStats'],
+    queryFn: async () => {
+      try {
+        return await api.getGlobalStats()
+      } catch (e) {
+        console.warn('Using mock global stats', e)
+        return mockGlobalStats
+      }
+    },
+    staleTime: 30000, // 30 seconds
+    retry: false,
+  })
+}
+
+export function useModelLeaderboard() {
+  return useQuery({
+    queryKey: ['modelLeaderboard'],
+    queryFn: async () => {
+      try {
+        return await api.getModelLeaderboard()
+      } catch (e) {
+        console.warn('Using mock model leaderboard', e)
+        return mockModelLeaderboard
+      }
+    },
+    staleTime: 30000,
+    retry: false,
+  })
+}
+
+export function useLuckVsSkill() {
+  return useQuery({
+    queryKey: ['luckVsSkill'],
+    queryFn: async () => {
+      try {
+        return await api.getLuckVsSkill()
+      } catch (e) {
+        console.warn('Using mock luck vs skill data', e)
+        return mockLuckVsSkill
+      }
+    },
+    staleTime: 30000,
+    retry: false,
+  })
+}
+
+export function useKillZones() {
+  return useQuery({
+    queryKey: ['killZones'],
+    queryFn: async () => {
+      try {
+        return await api.getKillZones()
+      } catch (e) {
+        console.warn('Using mock kill zones data', e)
+        return mockKillZones
+      }
+    },
+    staleTime: 30000,
+    retry: false,
+  })
+}
+
+export function useGameDurationHistogram(bucketSize: number = 20) {
+  return useQuery({
+    queryKey: ['gameDurationHistogram', bucketSize],
+    queryFn: async () => {
+      try {
+        return await api.getGameDurationHistogram(bucketSize)
+      } catch (e) {
+        console.warn('Using mock duration histogram', e)
+        return mockDurationHistogram
+      }
+    },
+    staleTime: 30000,
+    retry: false,
+  })
+}

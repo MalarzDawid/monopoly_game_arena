@@ -1,44 +1,89 @@
-import { useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { KpiGrid, TimeSeriesChart, BarChart, PlayersTable } from '@/components/dashboard'
-import { useGameStats, useCashHistory, useHistoricalGames } from '@/hooks/useGameData'
-import { mockStats, mockCashHistory } from '@/api/mocks'
-import { RefreshCw, AlertCircle } from 'lucide-react'
+import {
+  GlobalStatsGrid,
+  ModelLeaderboardTable,
+  LuckVsSkillScatter,
+  KillZonesChart,
+  GameDurationHistogram,
+} from '@/components/dashboard'
+import {
+  useGlobalStats,
+  useModelLeaderboard,
+  useLuckVsSkill,
+  useKillZones,
+  useGameDurationHistogram,
+} from '@/hooks/useGameData'
+import { RefreshCw, AlertCircle, BarChart3 } from 'lucide-react'
 
 export function DashboardPage() {
-  const [selectedGameId, setSelectedGameId] = useState<string | null>(null)
+  // Fetch global analytics data
+  const {
+    data: globalStats,
+    isLoading: statsLoading,
+    error: statsError,
+    refetch: refetchStats,
+  } = useGlobalStats()
 
-  // Fetch historical games
-  const { data: games, isLoading: gamesLoading, error: gamesError, refetch: refetchGames } = useHistoricalGames({ limit: 10 })
+  const {
+    data: leaderboard,
+    isLoading: leaderboardLoading,
+    refetch: refetchLeaderboard,
+  } = useModelLeaderboard()
 
-  // Use first game if none selected
-  const activeGameId = selectedGameId || (games && games.length > 0 ? games[0].game_id : null)
+  const {
+    data: luckVsSkill,
+    isLoading: luckLoading,
+    refetch: refetchLuck,
+  } = useLuckVsSkill()
 
-  // Fetch stats for selected game
-  const { data: stats, isLoading: statsLoading, error: statsError } = useGameStats(activeGameId)
-  const { data: cashHistory, isLoading: cashLoading } = useCashHistory(activeGameId)
+  const {
+    data: killZones,
+    isLoading: killZonesLoading,
+    refetch: refetchKillZones,
+  } = useKillZones()
 
-  // Use mock data if API unavailable
-  const displayStats = stats || mockStats
-  const displayCashHistory = cashHistory || mockCashHistory
+  const {
+    data: durationHistogram,
+    isLoading: durationLoading,
+    refetch: refetchDuration,
+  } = useGameDurationHistogram(20)
 
-  const isLoading = gamesLoading || statsLoading
-  const hasError = gamesError || statsError
+  const isLoading = statsLoading || leaderboardLoading || luckLoading || killZonesLoading || durationLoading
+  const hasError = statsError
+
+  const handleRefreshAll = () => {
+    refetchStats()
+    refetchLeaderboard()
+    refetchLuck()
+    refetchKillZones()
+    refetchDuration()
+  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Analytics Dashboard</h1>
-          <p className="text-muted-foreground">
-            Real-time game analytics and player performance
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <BarChart3 className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">Analytics Dashboard</h1>
+            <p className="text-muted-foreground">
+              Global statistics across all games in the database
+            </p>
+          </div>
         </div>
 
-        <Button variant="outline" size="icon" onClick={() => refetchGames()}>
-          <RefreshCw className="h-4 w-4" />
+        <Button
+          variant="outline"
+          onClick={handleRefreshAll}
+          disabled={isLoading}
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh Data
         </Button>
       </div>
 
@@ -57,103 +102,41 @@ export function DashboardPage() {
         </Card>
       )}
 
-      {/* Game Selector */}
-      {games && games.length > 0 && (
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4 overflow-x-auto pb-2">
-              <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                Select Game:
-              </span>
-              {games.slice(0, 5).map((game) => (
-                <Button
-                  key={game.game_id}
-                  variant={activeGameId === game.game_id ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setSelectedGameId(game.game_id)}
-                  className="whitespace-nowrap"
-                >
-                  {game.game_id.slice(0, 8)}...
-                  <span className="ml-2 text-xs opacity-70">
-                    {game.total_turns} turns
-                  </span>
-                </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Section 1: Global KPI Cards */}
+      <section>
+        <h2 className="text-lg font-semibold mb-4">Overview</h2>
+        <GlobalStatsGrid stats={globalStats} loading={statsLoading} />
+      </section>
 
-      {/* KPI Grid */}
-      <KpiGrid stats={displayStats} loading={isLoading} />
+      {/* Section 2: Model Leaderboard */}
+      <section>
+        <h2 className="text-lg font-semibold mb-4">Model Performance</h2>
+        <ModelLeaderboardTable data={leaderboard} loading={leaderboardLoading} />
+      </section>
 
-      {/* Charts Row */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <TimeSeriesChart
-          title="Cash Over Time"
-          data={displayCashHistory}
-          playerNames={displayStats.player_stats.map((p) => p.name)}
-          loading={cashLoading}
-        />
+      {/* Section 3: Analytics Charts Row 1 */}
+      <section>
+        <h2 className="text-lg font-semibold mb-4">Analytical Insights</h2>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <LuckVsSkillScatter data={luckVsSkill} loading={luckLoading} />
+          <KillZonesChart data={killZones} loading={killZonesLoading} />
+        </div>
+      </section>
 
-        <BarChart
-          title="Rent Collected by Player"
-          data={displayStats.player_stats}
-          dataKey="total_rent_collected"
-          loading={statsLoading}
-        />
-      </div>
+      {/* Section 4: Game Duration Histogram */}
+      <section>
+        <GameDurationHistogram data={durationHistogram} loading={durationLoading} />
+      </section>
 
-      {/* Additional Charts */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <BarChart
-          title="Net Worth Comparison"
-          data={displayStats.player_stats}
-          dataKey="net_worth"
-          loading={statsLoading}
-        />
-
-        <BarChart
-          title="Properties Owned"
-          data={displayStats.player_stats}
-          dataKey="properties_owned"
-          loading={statsLoading}
-        />
-      </div>
-
-      {/* Players Table */}
-      <PlayersTable data={displayStats.player_stats} loading={statsLoading} />
-
-      {/* Recent Games */}
-      {games && games.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base font-medium">Recent Games</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {games.map((game) => (
-                <div
-                  key={game.game_id}
-                  className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 cursor-pointer"
-                  onClick={() => setSelectedGameId(game.game_id)}
-                >
-                  <div>
-                    <p className="font-medium">{game.game_id}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {game.created_at ? new Date(game.created_at).toLocaleDateString() : 'N/A'} • {game.players.length} players
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">{game.total_turns} turns</p>
-                    <p className="text-sm text-muted-foreground capitalize">{game.status}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Footer Info */}
+      <Card className="bg-muted/30">
+        <CardContent className="p-4">
+          <p className="text-sm text-muted-foreground text-center">
+            Data is aggregated from all finished games in the database.
+            Statistics update when you click "Refresh Data".
+          </p>
+        </CardContent>
+      </Card>
     </div>
   )
 }

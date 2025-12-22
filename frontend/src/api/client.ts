@@ -118,6 +118,24 @@ export const api = {
     const path = `/api/dashboard/games/${gameId}/llm_decisions${query ? `?${query}` : ''}`
     return fetchApi<import('../types/game').LlmDecision[]>(path)
   },
+
+  // Global Analytics API
+  getGlobalStats: () =>
+    fetchApi<import('../types/game').GlobalStats>('/api/dashboard/global_stats'),
+
+  getModelLeaderboard: () =>
+    fetchApi<import('../types/game').ModelLeaderboardEntry[]>('/api/dashboard/model_leaderboard'),
+
+  getLuckVsSkill: () =>
+    fetchApi<import('../types/game').LuckVsSkillData[]>('/api/dashboard/luck_vs_skill'),
+
+  getKillZones: () =>
+    fetchApi<import('../types/game').KillZoneData[]>('/api/dashboard/kill_zones'),
+
+  getGameDurationHistogram: (bucketSize: number = 20) =>
+    fetchApi<import('../types/game').GameDurationBucket[]>(
+      `/api/dashboard/game_duration_histogram?bucket_size=${bucketSize}`
+    ),
 }
 
 export { ApiError }
