@@ -106,6 +106,33 @@ export function useTurnEvents(gameId: string | null, turnNumber: number | null) 
   })
 }
 
+// Latest events for live feed (uses dashboard API which returns all events sorted by sequence)
+export function useLatestEvents(gameId: string | null, limit: number = 30) {
+  return useQuery({
+    queryKey: ['latestEvents', gameId, limit],
+    queryFn: async () => {
+      if (!gameId) throw new Error('No game ID')
+      try {
+        const events = await api.getLatestEvents(gameId, limit)
+        // Transform DashboardEvent to GameEvent format for EventFeed
+        return events.map((ev) => ({
+          event_type: ev.event_type,
+          player_id: ev.actor_player_id ?? undefined,
+          timestamp: ev.timestamp,
+          turn_number: ev.turn_number,
+          ...ev.payload,
+        }))
+      } catch (e) {
+        console.warn('Using mock events due to error loading latest events', e)
+        return mockEvents
+      }
+    },
+    enabled: !!gameId,
+    refetchInterval: POLLING_INTERVAL,
+    retry: false,
+  })
+}
+
 export function useHistoricalGames(params?: { limit?: number; offset?: number; status?: string }) {
   return useQuery({
     queryKey: ['historicalGames', params],

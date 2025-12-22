@@ -22,7 +22,7 @@ import {
 import {
   useGameSnapshot,
   useGameStatus,
-  useTurnEvents,
+  useLatestEvents,
   useGameControl,
   useCreateGame,
   useLivePlayerStats,
@@ -63,10 +63,7 @@ export function WatchPage() {
   // Fetch game data
   const { data: snapshot, isLoading: snapshotLoading, error: snapshotError } = useGameSnapshot(gameId)
   const { data: status, isLoading: statusLoading, error: statusError } = useGameStatus(gameId)
-  const { data: events, isLoading: eventsLoading } = useTurnEvents(
-    gameId,
-    status?.turn_number ?? null
-  )
+  const { data: events, isLoading: eventsLoading } = useLatestEvents(gameId, 30)
   const { data: liveStats } = useLivePlayerStats(gameId)
   const { data: llmDecisions, isLoading: llmLoading } = useLlmDecisions(gameId)
   const { data: recentGames } = useHistoricalGames({ limit: 10 })

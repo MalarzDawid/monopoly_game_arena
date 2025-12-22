@@ -104,6 +104,12 @@ export const api = {
     )
   },
 
+  getLatestEvents: (gameId: string, limit: number = 20) => {
+    return fetchApi<import('../types/game').DashboardEvent[]>(
+      `/api/dashboard/games/${gameId}/latest_events?limit=${limit}`,
+    )
+  },
+
   getLlmDecisions: (gameId: string, playerId?: number, limit?: number) => {
     const params = new URLSearchParams()
     if (typeof playerId === 'number') params.set('player_id', String(playerId))
