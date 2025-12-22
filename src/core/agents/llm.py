@@ -140,26 +140,51 @@ class LLMAgent(Agent):
         # Build prompt
         prompt = self._build_prompt(game_state_json, player_state_json, actions_json)
 
-        # Query LLM
+        # Query LLM with retry on failure
         raw_response = ""
         error_msg = None
         chosen_action = None
         rationale = ""
         used_fallback = False
+        max_retries = 2
 
-        try:
-            raw_response = self._query_llm(prompt)
-            chosen_action, rationale = self._parse_response(raw_response, legal_actions)
-        except Exception as e:
-            llm_error = LLMError(str(e))
-            error_msg = str(llm_error)
-            logger.warning("LLM error for player %s: %s", self.player_id, error_msg)
+        for attempt in range(max_retries):
+            try:
+                if attempt == 0:
+                    raw_response = self._query_llm(prompt)
+                else:
+                    # Retry with error feedback
+                    retry_prompt = self._build_retry_prompt(prompt, raw_response, error_msg or "invalid response")
+                    logger.info(f"LLM Player {self.player_id}: Retry attempt {attempt + 1}/{max_retries}")
+                    raw_response = self._query_llm(retry_prompt)
 
-        # Fallback if parsing failed or action invalid
+                chosen_action, rationale = self._parse_response(raw_response, legal_actions)
+
+                if chosen_action is not None:
+                    # Success - break out of retry loop
+                    break
+                else:
+                    # Parse returned None - rationale contains error message
+                    error_msg = rationale
+                    logger.warning(
+                        "LLM parse failed for player %s (attempt %d): %s",
+                        self.player_id, attempt + 1, error_msg
+                    )
+
+            except Exception as e:
+                llm_error = LLMError(str(e))
+                error_msg = str(llm_error)
+                logger.warning(
+                    "LLM error for player %s (attempt %d): %s",
+                    self.player_id, attempt + 1, error_msg
+                )
+
+        # Fallback if all retries failed
         if chosen_action is None:
             chosen_action = self._get_fallback_action(legal_actions)
             used_fallback = True
-            rationale = f"Fallback due to: {error_msg or 'invalid response'}"
+            # Generate sensible reasoning based on game context instead of error message
+            rationale = self._generate_fallback_reasoning(chosen_action, game, self.strategy)
 
         processing_time_ms = int((time.time() - start_time) * 1000)
 
@@ -354,6 +379,30 @@ class LLMAgent(Agent):
         ]
         return "\n".join(prompt_parts)
 
+    def _build_retry_prompt(
+        self,
+        original_prompt: str,
+        bad_response: str,
+        error: str,
+    ) -> str:
+        """Build retry prompt with error feedback."""
+        return f"""{original_prompt}
+
+## IMPORTANT: Your previous response was INVALID!
+
+**Error:** {error}
+
+**Your invalid response was:**
+{bad_response[:500] if bad_response else "(empty response)"}
+
+**Please fix your response.** You MUST respond with ONLY a valid JSON object, nothing else.
+No text before or after the JSON. No markdown code blocks.
+
+**Correct format example:**
+{{"action_type": "roll_dice", "params": {{}}, "rationale": "Starting my turn"}}
+
+Respond now with the correct JSON:"""
+
     def _query_llm(self, prompt: str) -> str:
         """Query the LLM using OpenAI-compatible chat completions API."""
         url = f"{self.base_url.rstrip('/')}/chat/completions"
@@ -365,7 +414,8 @@ class LLMAgent(Agent):
             ],
             "max_tokens": MAX_TOKENS,
             "temperature": 0.3,
-            "stop": ["\n\n", "```"],
+            # Note: removed stop tokens - they were causing empty responses
+            # when LLM started with newlines or markdown
         }
 
         headers: Dict[str, str] = {}
@@ -386,7 +436,17 @@ class LLMAgent(Agent):
         # OpenAI-compatible API returns choices[0].message.content
         if "choices" in result and len(result["choices"]) > 0:
             message = result["choices"][0].get("message", {})
-            return message.get("content", "").strip()
+            content = message.get("content", "").strip()
+
+            # Validate non-empty response
+            if not content:
+                raise ValueError("LLM returned empty response")
+
+            # Validate minimum length (JSON needs at least {"action_type":"x"})
+            if len(content) < 20:
+                raise ValueError(f"LLM response too short: {content}")
+
+            return content
 
         raise ValueError("Invalid LLM response format")
 
@@ -480,6 +540,113 @@ class LLMAgent(Agent):
 
         # Last resort: first legal action
         return legal_actions[0]
+
+    def _generate_fallback_reasoning(
+        self,
+        action: Action,
+        game: GameState,
+        strategy: str,
+    ) -> str:
+        """Generate a sensible reasoning for fallback action based on game context."""
+        player = game.players[self.player_id]
+        action_type = action.action_type
+
+        # Strategy-specific modifiers
+        strategy_style = {
+            "aggressive": "aggressively pursuing victory",
+            "balanced": "maintaining a balanced approach",
+            "defensive": "playing conservatively to preserve resources",
+        }.get(strategy, "making a strategic decision")
+
+        # Generate context-aware reasoning based on action type
+        if action_type == ActionType.ROLL_DICE:
+            if player.in_jail:
+                return f"Rolling dice to attempt escape from jail - {strategy_style}"
+            return f"Rolling dice to advance on the board and explore opportunities - {strategy_style}"
+
+        elif action_type == ActionType.END_TURN:
+            return f"Ending turn after completing available actions - {strategy_style}"
+
+        elif action_type == ActionType.PASS_AUCTION:
+            if game.active_auction:
+                current_bid = game.active_auction.current_bid
+                prop_name = game.active_auction.property_name
+                if player.cash < current_bid + 100:
+                    return f"Passing on {prop_name} auction - insufficient funds to bid safely (cash: ${player.cash}, bid: ${current_bid})"
+                return f"Passing on {prop_name} auction at ${current_bid} - {strategy_style}"
+            return f"Passing on auction - {strategy_style}"
+
+        elif action_type == ActionType.DECLINE_PURCHASE:
+            position = action.params.get("position")
+            if position is not None:
+                space = game.board.get_space(position)
+                space_name = space.name if space else f"property at {position}"
+                if hasattr(space, 'price'):
+                    price = space.price
+                    if player.cash < price + 200:
+                        return f"Declining {space_name} (${price}) - need to preserve cash reserve (${player.cash} available)"
+                    return f"Declining {space_name} (${price}) to trigger auction - {strategy_style}"
+                return f"Declining {space_name} - {strategy_style}"
+            return f"Declining purchase opportunity - {strategy_style}"
+
+        elif action_type == ActionType.BUY_PROPERTY:
+            position = action.params.get("position")
+            if position is not None:
+                space = game.board.get_space(position)
+                space_name = space.name if space else f"property at {position}"
+                return f"Purchasing {space_name} to expand portfolio - {strategy_style}"
+            return f"Purchasing property to expand portfolio - {strategy_style}"
+
+        elif action_type == ActionType.PAY_JAIL_FINE:
+            return f"Paying $50 jail fine to resume movement - {strategy_style}"
+
+        elif action_type == ActionType.USE_JAIL_CARD:
+            return f"Using Get Out of Jail Free card to escape without payment - {strategy_style}"
+
+        elif action_type == ActionType.BID:
+            amount = action.params.get("amount", 0)
+            if game.active_auction:
+                prop_name = game.active_auction.property_name
+                return f"Bidding ${amount} on {prop_name} - {strategy_style}"
+            return f"Placing bid of ${amount} - {strategy_style}"
+
+        elif action_type == ActionType.BUILD_HOUSE:
+            position = action.params.get("position")
+            if position is not None:
+                space = game.board.get_space(position)
+                space_name = space.name if space else f"property at {position}"
+                return f"Building house on {space_name} to increase rent income - {strategy_style}"
+            return f"Building house to increase rent income - {strategy_style}"
+
+        elif action_type == ActionType.BUILD_HOTEL:
+            position = action.params.get("position")
+            if position is not None:
+                space = game.board.get_space(position)
+                space_name = space.name if space else f"property at {position}"
+                return f"Building hotel on {space_name} for maximum rent - {strategy_style}"
+            return f"Building hotel for maximum rent potential - {strategy_style}"
+
+        elif action_type == ActionType.MORTGAGE_PROPERTY:
+            position = action.params.get("position")
+            if position is not None:
+                space = game.board.get_space(position)
+                space_name = space.name if space else f"property at {position}"
+                return f"Mortgaging {space_name} to raise emergency funds - {strategy_style}"
+            return f"Mortgaging property to raise funds - {strategy_style}"
+
+        elif action_type == ActionType.UNMORTGAGE_PROPERTY:
+            position = action.params.get("position")
+            if position is not None:
+                space = game.board.get_space(position)
+                space_name = space.name if space else f"property at {position}"
+                return f"Unmortgaging {space_name} to restore rent collection - {strategy_style}"
+            return f"Unmortgaging property to restore income - {strategy_style}"
+
+        elif action_type == ActionType.DECLARE_BANKRUPTCY:
+            return f"Declaring bankruptcy - unable to meet financial obligations"
+
+        # Generic fallback for any other action
+        return f"Executing {action_type.value} - {strategy_style}"
 
     def close(self):
         """Clean up resources."""
