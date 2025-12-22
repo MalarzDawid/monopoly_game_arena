@@ -82,7 +82,7 @@ def get_legal_actions(game_state: GameState, player_id: int) -> List[Action]:
 
     # Handle pending rent payment (player needs to raise funds or go bankrupt)
     if game_state.pending_rent_payment is not None:
-        payer_id, owner_id, amount_owed = game_state.pending_rent_payment
+        payer_id, owner_id, amount_owed, _position = game_state.pending_rent_payment
         if payer_id == player_id:
             # Player must raise funds or declare bankruptcy
             actions.extend(_get_property_management_actions(game_state, player_id))
@@ -497,11 +497,11 @@ def _try_resolve_pending_payment(game_state: GameState) -> bool:
     """
     # Try to resolve pending rent
     if game_state.pending_rent_payment is not None:
-        payer_id, owner_id, amount = game_state.pending_rent_payment
+        payer_id, owner_id, amount, position = game_state.pending_rent_payment
         payer = game_state.players[payer_id]
 
         if payer.cash >= amount:
-            success = game_state.pay_rent(payer_id, owner_id, amount)
+            success = game_state.pay_rent(payer_id, owner_id, amount, position)
             if success:
                 return True
 
@@ -545,7 +545,7 @@ def _resolve_landing(game_state: GameState, player_id: int, position: int) -> No
         ownership = game_state.property_ownership[position]
         if ownership.is_owned() and ownership.owner_id != player_id:
             rent = game_state.calculate_rent(position)
-            game_state.pay_rent(player_id, ownership.owner_id, rent)
+            game_state.pay_rent(player_id, ownership.owner_id, rent, position)
 
     # Tax
     elif space.space_type == SpaceType.TAX:

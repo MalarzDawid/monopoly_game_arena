@@ -77,7 +77,7 @@ class GameState:
         self.current_player_index = 0
         self.turn_number = 0
         self.active_auction: Optional[Auction] = None
-        self.pending_rent_payment: Optional[Tuple[int, int, int]] = None  # (payer_id, owner_id, amount)
+        self.pending_rent_payment: Optional[Tuple[int, int, int, int]] = None  # (payer_id, owner_id, amount, position)
         self.pending_tax_payment: Optional[Tuple[int, int]] = None  # (payer_id, amount)
         self.trade_manager = TradeManager()
         self.game_over = False
@@ -619,17 +619,23 @@ class GameState:
 
         return 0
 
-    def pay_rent(self, payer_id: int, owner_id: int, amount: int) -> bool:
+    def pay_rent(self, payer_id: int, owner_id: int, amount: int, position: Optional[int] = None) -> bool:
         """
         Player pays rent to property owner.
         Returns True if successful, False if insufficient funds.
+        Position is the board position where rent is being paid (for analytics).
         """
         payer = self.players[payer_id]
         owner = self.players[owner_id]
 
+        # If position not provided, use payer's current position
+        if position is None:
+            position = payer.position
+
         if payer.cash < amount:
             # Player needs to raise funds or declare bankruptcy
-            self.pending_rent_payment = (payer_id, owner_id, amount)
+            # Store position for later when payment is resolved
+            self.pending_rent_payment = (payer_id, owner_id, amount, position)
             return False
 
         payer.cash -= amount
@@ -642,6 +648,7 @@ class GameState:
             details={
                 "owner": owner_id,
                 "amount": amount,
+                "position": position,
                 "payer_balance": payer.cash,
                 "owner_balance": owner.cash,
             },

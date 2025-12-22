@@ -265,8 +265,8 @@ class LLMAgent(Agent):
         # Pending payments
         pending = {}
         if game.pending_rent_payment:
-            payer_id, owner_id, amount = game.pending_rent_payment
-            pending["rent"] = {"amount": amount, "to_player": owner_id}
+            payer_id, owner_id, amount, position = game.pending_rent_payment
+            pending["rent"] = {"amount": amount, "to_player": owner_id, "position": position}
         if game.pending_tax_payment:
             payer_id, amount = game.pending_tax_payment
             pending["tax"] = {"amount": amount}

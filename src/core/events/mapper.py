@@ -101,16 +101,16 @@ def map_event(board: Board, event: GameEvent, *, player_positions: Optional[Dict
     if event.event_type == EventType.RENT_PAYMENT:
         payer_id = event.player_id
         owner_id = d.get("owner") or d.get("owner_id")
-        # Derive property name from payer's current position if possible
-        prop_name: Optional[str] = None
-        if payer_id is not None and player_positions is not None:
+        # Get position from event details (preferred) or fallback to player's current position
+        pos = d.get("position")
+        if pos is None and payer_id is not None and player_positions is not None:
             pos = player_positions.get(payer_id)
-            if pos is not None:
-                prop_name = _space_name(board, pos)
+        prop_name = _space_name(board, pos) if pos is not None else None
         base.update(
             payer_id=payer_id,
             owner_id=owner_id,
             amount=d.get("amount"),
+            position=pos,
             payer_cash_after=d.get("payer_balance") or d.get("payer_cash_after"),
             owner_cash_after=d.get("owner_balance") or d.get("owner_cash_after"),
         )
