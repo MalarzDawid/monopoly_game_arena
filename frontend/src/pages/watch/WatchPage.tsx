@@ -9,7 +9,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { MonopolyBoardSvg, EventFeed, PlayerCards, GameControls, LlmDecisionFeed } from '@/components/watch'
+import {
+  MonopolyBoardSvg,
+  EventFeed,
+  PlayerCards,
+  GameControls,
+  LlmDecisionFeed,
+  NetWorthOverTimeChart,
+  AssetAllocationChart,
+  RentHeatmap,
+} from '@/components/watch'
 import {
   useGameSnapshot,
   useGameStatus,
@@ -19,6 +28,9 @@ import {
   useLivePlayerStats,
   useLlmDecisions,
   useHistoricalGames,
+  useNetWorthHistory,
+  useRentByColorGroup,
+  useAssetAllocation,
 } from '@/hooks/useGameData'
 import { mockSnapshot, mockEvents } from '@/api/mocks'
 import { Plus, Gamepad2, AlertCircle } from 'lucide-react'
@@ -58,6 +70,14 @@ export function WatchPage() {
   const { data: liveStats } = useLivePlayerStats(gameId)
   const { data: llmDecisions, isLoading: llmLoading } = useLlmDecisions(gameId)
   const { data: recentGames } = useHistoricalGames({ limit: 10 })
+
+  // New chart hooks
+  const { data: netWorthHistory, isLoading: netWorthLoading } = useNetWorthHistory(
+    gameId,
+    snapshot?.players
+  )
+  const { data: rentByColorGroup, isLoading: rentLoading } = useRentByColorGroup(gameId)
+  const assetAllocation = useAssetAllocation(snapshot?.players)
 
   // Game control mutations
   const { pause, resume, setSpeed } = useGameControl(gameId || '')
@@ -363,20 +383,34 @@ export function WatchPage() {
       {/* Main Content */}
       {(gameId || hasError) && (
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Board */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base font-medium">Game Board</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MonopolyBoardSvg
-                players={displaySnapshot.players}
-                currentPlayerId={displaySnapshot.current_player_id}
-              />
-            </CardContent>
-          </Card>
+          {/* Board and Charts Column */}
+          <div className="space-y-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-medium">Game Board</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MonopolyBoardSvg
+                  players={displaySnapshot.players}
+                  currentPlayerId={displaySnapshot.current_player_id}
+                />
+              </CardContent>
+            </Card>
 
-          {/* Feeds */}
+            {/* Asset Allocation Chart - under board */}
+            <AssetAllocationChart
+              data={assetAllocation}
+              loading={snapshotLoading}
+            />
+
+            {/* Rent Heatmap - under asset allocation */}
+            <RentHeatmap
+              data={rentByColorGroup || []}
+              loading={rentLoading}
+            />
+          </div>
+
+          {/* Feeds and Charts Column */}
           <div className="space-y-4">
             <EventFeed
               events={displayEvents}
@@ -387,6 +421,13 @@ export function WatchPage() {
               decisions={llmDecisions}
               players={displaySnapshot.players}
               loading={llmLoading}
+            />
+
+            {/* Net Worth Over Time Chart - after LLM Decisions */}
+            <NetWorthOverTimeChart
+              data={netWorthHistory || []}
+              players={displaySnapshot.players}
+              loading={netWorthLoading}
             />
           </div>
         </div>
