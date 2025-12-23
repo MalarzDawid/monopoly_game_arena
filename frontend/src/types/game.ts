@@ -271,3 +271,28 @@ export interface StrategyPropertyData {
   color_group: string
   purchase_count: number
 }
+
+// LLM Reasoning entry from llm_decisions table
+export interface LLMReasoningEntry {
+  id: string
+  game_uuid: string
+  player_id: number
+  turn_number: number
+  reasoning: string
+  strategy_description: string | null
+  model_version: string | null
+  timestamp: string
+  player_name: string
+  strategy: string
+  model_name: string
+  action_type: string
+  chosen_action: Record<string, unknown>
+}
+
+// Paginated response for LLM reasonings
+export interface LLMReasoningsResponse {
+  items: LLMReasoningEntry[]
+  total: number
+  limit: number
+  offset: number
+}

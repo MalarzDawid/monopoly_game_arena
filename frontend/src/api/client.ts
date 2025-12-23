@@ -141,6 +141,17 @@ export const api = {
     fetchApi<import('../types/game').StrategyPropertyData[]>(
       '/api/dashboard/strategy_property_correlation'
     ),
+
+  getLLMReasonings: (params: { limit?: number; offset?: number; search?: string } = {}) => {
+    const queryParams = new URLSearchParams()
+    if (params.limit) queryParams.set('limit', params.limit.toString())
+    if (params.offset !== undefined) queryParams.set('offset', params.offset.toString())
+    if (params.search) queryParams.set('search', params.search)
+    const queryString = queryParams.toString()
+    return fetchApi<import('../types/game').LLMReasoningsResponse>(
+      `/api/dashboard/llm_reasonings${queryString ? `?${queryString}` : ''}`
+    )
+  },
 }
 
 export { ApiError }

@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -7,6 +8,7 @@ import {
   KillZonesChart,
   GameDurationHistogram,
   StrategyPropertyHeatmap,
+  LLMReasoningList,
 } from '@/components/dashboard'
 import {
   useGlobalStats,
@@ -15,10 +17,22 @@ import {
   useKillZones,
   useGameDurationHistogram,
   useStrategyPropertyCorrelation,
+  useLLMReasonings,
 } from '@/hooks/useGameData'
+import { api } from '@/api/client'
+import type { LLMReasoningEntry } from '@/types/game'
 import { RefreshCw, AlertCircle, BarChart3 } from 'lucide-react'
 
+const PAGE_SIZE = 50
+
 export function DashboardPage() {
+  // State for LLM reasoning search
+  const [reasoningSearch, setReasoningSearch] = useState('')
+
+  // Pagination state for LLM reasonings
+  const [accumulatedReasonings, setAccumulatedReasonings] = useState<LLMReasoningEntry[]>([])
+  const [loadingMore, setLoadingMore] = useState(false)
+
   // Fetch global analytics data
   const {
     data: globalStats,
@@ -57,6 +71,46 @@ export function DashboardPage() {
     refetch: refetchStrategyProperty,
   } = useStrategyPropertyCorrelation()
 
+  const {
+    data: llmReasonings,
+    isLoading: reasoningsLoading,
+    refetch: refetchReasonings,
+  } = useLLMReasonings({ limit: PAGE_SIZE, offset: 0, search: reasoningSearch || undefined })
+
+  // Reset accumulated items when search changes or initial data loads
+  useEffect(() => {
+    if (llmReasonings?.items) {
+      setAccumulatedReasonings(llmReasonings.items)
+    }
+  }, [llmReasonings?.items, reasoningSearch])
+
+  // Handle Load More for LLM reasonings
+  const handleLoadMoreReasonings = useCallback(async () => {
+    if (loadingMore || !llmReasonings) return
+
+    setLoadingMore(true)
+    try {
+      const newOffset = accumulatedReasonings.length
+      const response = await api.getLLMReasonings({
+        limit: PAGE_SIZE,
+        offset: newOffset,
+        search: reasoningSearch || undefined,
+      })
+
+      setAccumulatedReasonings((prev) => [...prev, ...response.items])
+    } catch (error) {
+      console.error('Failed to load more reasonings:', error)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [loadingMore, llmReasonings, accumulatedReasonings.length, reasoningSearch])
+
+  // Handle search change - reset pagination
+  const handleSearchChange = useCallback((search: string) => {
+    setReasoningSearch(search)
+    setAccumulatedReasonings([])
+  }, [])
+
   const isLoading = statsLoading || leaderboardLoading || luckLoading || killZonesLoading || durationLoading || strategyPropertyLoading
   const hasError = statsError
 
@@ -67,6 +121,7 @@ export function DashboardPage() {
     refetchKillZones()
     refetchDuration()
     refetchStrategyProperty()
+    refetchReasonings()
   }
 
   return (
@@ -139,6 +194,19 @@ export function DashboardPage() {
           <GameDurationHistogram data={durationHistogram} loading={durationLoading} />
           <StrategyPropertyHeatmap data={strategyProperty} loading={strategyPropertyLoading} />
         </div>
+      </section>
+
+      {/* Section 5: LLM Decision Reasonings */}
+      <section>
+        <h2 className="text-lg font-semibold mb-4">LLM Decision Analysis</h2>
+        <LLMReasoningList
+          data={llmReasonings}
+          loading={reasoningsLoading}
+          onSearchChange={handleSearchChange}
+          onLoadMore={handleLoadMoreReasonings}
+          loadingMore={loadingMore}
+          accumulatedItems={accumulatedReasonings.length > 0 ? accumulatedReasonings : undefined}
+        />
       </section>
 
       {/* Footer Info */}

@@ -496,6 +496,96 @@ async def kill_zones(session: AsyncSession = Depends(get_session)) -> List[Dict[
     return rows
 
 
+@router.get("/llm_reasonings")
+async def llm_reasonings(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    search: Optional[str] = Query(None),
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    """
+    List of LLM decision reasonings with strategy info.
+    Supports pagination and text search.
+    """
+    # Base query for counting total
+    count_query = """
+        SELECT COUNT(*) as total
+        FROM llm_decisions d
+        JOIN players p ON p.game_uuid = d.game_uuid AND p.player_id = d.player_id
+    """
+
+    # Main query
+    query = """
+        SELECT
+            d.id,
+            d.game_uuid,
+            d.player_id,
+            d.turn_number,
+            d.reasoning,
+            d.strategy_description,
+            d.model_version,
+            d.timestamp,
+            p.name as player_name,
+            COALESCE(
+                p.llm_strategy_profile->>'name',
+                d.strategy_description,
+                'Unknown'
+            ) as strategy,
+            COALESCE(p.llm_model_name, d.model_version, 'unknown') as model_name,
+            d.chosen_action
+        FROM llm_decisions d
+        JOIN players p ON p.game_uuid = d.game_uuid AND p.player_id = d.player_id
+    """
+
+    params: Dict[str, Any] = {"limit": limit, "offset": offset}
+
+    # Add search filter if provided
+    if search and search.strip():
+        search_filter = """
+            WHERE (
+                d.reasoning ILIKE :search
+                OR d.strategy_description ILIKE :search
+                OR p.llm_strategy_profile->>'name' ILIKE :search
+                OR COALESCE(p.llm_model_name, d.model_version) ILIKE :search
+            )
+        """
+        query += search_filter
+        count_query += search_filter
+        params["search"] = f"%{search.strip()}%"
+
+    query += " ORDER BY d.timestamp DESC LIMIT :limit OFFSET :offset"
+
+    # Get total count
+    count_result = await session.execute(text(count_query), params)
+    total = count_result.scalar() or 0
+
+    # Get data
+    result = await session.execute(text(query), params)
+    rows = [dict(row._mapping) for row in result.fetchall()]
+
+    # Convert UUIDs and timestamps to strings for JSON serialization
+    for row in rows:
+        if row.get("id"):
+            row["id"] = str(row["id"])
+        if row.get("game_uuid"):
+            row["game_uuid"] = str(row["game_uuid"])
+        if row.get("timestamp"):
+            row["timestamp"] = row["timestamp"].isoformat()
+        if row.get("chosen_action"):
+            # Extract action type for display
+            action = row["chosen_action"]
+            row["action_type"] = action.get("action_type", "unknown") if isinstance(action, dict) else "unknown"
+        else:
+            row["action_type"] = "unknown"
+
+    return {
+        "items": rows,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
 @router.get("/strategy_property_correlation")
 async def strategy_property_correlation(session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
     """

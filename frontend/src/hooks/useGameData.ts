@@ -676,6 +676,7 @@ import type {
   KillZoneData,
   GameDurationBucket,
   StrategyPropertyData,
+  LLMReasoningsResponse,
 } from '../types/game'
 
 // Mock data for fallback
@@ -817,6 +818,61 @@ export function useStrategyPropertyCorrelation() {
       } catch (e) {
         console.warn('Using mock strategy-property correlation', e)
         return mockStrategyPropertyData
+      }
+    },
+    staleTime: 30000,
+    retry: false,
+  })
+}
+
+// Mock data for LLM reasonings
+const mockLLMReasonings: LLMReasoningsResponse = {
+  items: [
+    {
+      id: '1',
+      game_uuid: 'abc123',
+      player_id: 0,
+      turn_number: 5,
+      reasoning: 'I should buy this property because it completes my monopoly on the orange color group, which has the highest ROI in the game.',
+      strategy_description: 'balanced',
+      model_version: 'gemma3:4b',
+      timestamp: new Date().toISOString(),
+      player_name: 'Alice',
+      strategy: 'balanced',
+      model_name: 'gemma3:4b',
+      action_type: 'buy',
+      chosen_action: { type: 'buy' },
+    },
+    {
+      id: '2',
+      game_uuid: 'abc123',
+      player_id: 0,
+      turn_number: 12,
+      reasoning: 'Building houses on my properties will maximize rent income. I have enough cash reserves to do this safely.',
+      strategy_description: 'balanced',
+      model_version: 'gemma3:4b',
+      timestamp: new Date().toISOString(),
+      player_name: 'Alice',
+      strategy: 'balanced',
+      model_name: 'gemma3:4b',
+      action_type: 'build',
+      chosen_action: { type: 'build' },
+    },
+  ],
+  total: 2,
+  limit: 100,
+  offset: 0,
+}
+
+export function useLLMReasonings(params: { limit?: number; offset?: number; search?: string } = {}) {
+  return useQuery({
+    queryKey: ['llmReasonings', params],
+    queryFn: async () => {
+      try {
+        return await api.getLLMReasonings(params)
+      } catch (e) {
+        console.warn('Using mock LLM reasonings', e)
+        return mockLLMReasonings
       }
     },
     staleTime: 30000,
