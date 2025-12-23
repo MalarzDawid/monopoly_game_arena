@@ -67,8 +67,8 @@ sequenceDiagram
 ### Usage
 
 ```python
-from agents import RandomAgent, GreedyAgent, LLMAgent
-from monopoly.rules import get_legal_actions, apply_action
+from src.core.agents import RandomAgent, GreedyAgent, LLMAgent
+from src.core.game.rules import get_legal_actions, apply_action
 
 # Create agents for each player
 agents = [
@@ -93,8 +93,9 @@ while not game.game_over:
 Extend the `Agent` base class and implement `choose_action()`:
 
 ```python
-from agents import Agent
-from monopoly.rules import Action
+from src.core.agents import Agent
+from src.core.game.rules import Action
+
 
 class MyCustomAgent(Agent):
     def __init__(self, player_id: int, name: str):
@@ -124,8 +125,10 @@ LLMAgent requires an LLM backend (Ollama, vLLM, or OpenAI-compatible API):
 
 ```bash
 # Environment variables
+LLM_PROVIDER=ollama
 LLM_BASE_URL=http://localhost:11434/v1  # Ollama
 LLM_MODEL=gemma3:4b
+# LLM_API_KEY=your-secret-key
 ```
 
 Three strategy profiles available:

@@ -34,7 +34,7 @@ DATABASE_URL_SYNC=postgresql://monopoly_user:monopoly_pass@localhost:5432/monopo
 ### Usage
 
 ```python
-from server.database.config import get_settings
+from data.config import get_settings
 
 settings = get_settings()
 
@@ -57,7 +57,7 @@ engine_kwargs = settings.get_engine_kwargs()
 ### Session Management
 
 ```python
-from server.database import init_db, close_db, session_scope, get_session
+from data import init_db, close_db, session_scope, get_session
 
 # Initialize at startup
 await init_db()
@@ -110,6 +110,6 @@ make db-restore
 
 ### Reference
 
-::: server.database.config.DatabaseSettings
+::: data.config.DatabaseSettings
 
-::: server.database.config.get_settings
+::: data.config.get_settings

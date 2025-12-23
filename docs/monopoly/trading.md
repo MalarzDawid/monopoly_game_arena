@@ -5,7 +5,7 @@ Trades allow exchanging properties, cash, and jail cards. The engine validates o
 Example proposal shape:
 
 ```python
-from monopoly.trading import TradeItem, TradeItemType
+from core.game.trading import TradeItem, TradeItemType
 
 offers = [TradeItem(TradeItemType.CASH, 100)]
 wants  = [TradeItem(TradeItemType.PROPERTY, 1)]
@@ -14,10 +14,10 @@ wants  = [TradeItem(TradeItemType.PROPERTY, 1)]
 
 ### Reference
 
-::: monopoly.trading.TradeItemType
+::: core.game.trading.TradeItemType
 
-::: monopoly.trading.TradeItem
+::: core.game.trading.TradeItem
 
-::: monopoly.trading.TradeOffer
+::: core.game.trading.TradeOffer
 
-::: monopoly.trading.TradeManager
+::: core.game.trading.TradeManager

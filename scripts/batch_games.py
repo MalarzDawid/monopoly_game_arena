@@ -46,12 +46,11 @@ from typing import List, Optional, Tuple
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
-from monopoly.game import create_game, ActionType
-from monopoly.player import Player
-from monopoly.config import GameConfig
-from monopoly.rules import get_legal_actions, apply_action
+from src.core import GameConfig, Player, create_game
+from src.core.game.game import ActionType
+from src.core.game.rules import apply_action, get_legal_actions
 from game_logger import GameLogger
-from agents import RandomAgent, GreedyAgent, LLMAgent
+from src.core.agents import GreedyAgent, LLMAgent, RandomAgent
 
 
 def _save_game_to_db(
@@ -67,7 +66,7 @@ def _save_game_to_db(
 ) -> bool:
     """Save complete game to database (create, events, finalize). Returns success."""
     async def _save():
-        from server.database import init_db, close_db, session_scope, GameRepository
+        from src.data import init_db, close_db, session_scope, GameRepository
         import uuid as uuid_module
 
         await init_db()

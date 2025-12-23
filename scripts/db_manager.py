@@ -18,7 +18,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
-from server.database import (
+from src.data import (
     init_db,
     close_db,
     create_tables,

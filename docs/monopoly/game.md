@@ -5,8 +5,8 @@
 Example turn loop with Rules API:
 
 ```python
-from monopoly import GameConfig, create_game, Player
-from monopoly.rules import get_legal_actions, apply_action
+from core import GameConfig, create_game, Player
+from core.game.rules import get_legal_actions, apply_action
 
 game = create_game(GameConfig(seed=7), [Player(0, "A"), Player(1, "B")])
 pid = game.get_current_player().player_id
@@ -17,8 +17,8 @@ apply_action(game, action)
 
 ### Reference
 
-::: monopoly.game.GameState
+::: core.game.GameState
 
-::: monopoly.game.ActionType
+::: core.game.game.ActionType
 
-::: monopoly.game.create_game
+::: core.game.game.create_game

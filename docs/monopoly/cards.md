@@ -5,7 +5,7 @@ Chance and Community Chest are modeled with `Card`, `CardType`, and `Deck`. Card
 Example:
 
 ```python
-from monopoly.cards import Card, CardType, create_chance_deck
+from core.game.cards import Card, CardType, create_chance_deck
 import random
 
 rng = random.Random(42)
@@ -16,12 +16,12 @@ print(card.description, card.card_type)
 
 ### Reference
 
-::: monopoly.cards.Card
+::: core.game.cards.Card
 
-::: monopoly.cards.CardType
+::: core.game.cards.CardType
 
-::: monopoly.cards.Deck
+::: core.game.cards.Deck
 
-::: monopoly.cards.create_chance_deck
+::: core.game.cards.create_chance_deck
 
-::: monopoly.cards.create_community_chest_deck
+::: core.game.cards.create_community_chest_deck

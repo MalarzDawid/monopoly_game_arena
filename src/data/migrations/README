@@ -1,0 +1,11 @@
+Alembic migrations live here (refactored under src/data).
+
+Quick commands:
+- Set PYTHONPATH to repo root: PYTHONPATH=$(pwd)
+- Upgrade: UV_CACHE_DIR=.uv-cache uv run alembic upgrade head
+- Create revision: UV_CACHE_DIR=.uv-cache uv run alembic revision --autogenerate -m "message"
+- Downgrade: UV_CACHE_DIR=.uv-cache uv run alembic downgrade -1
+
+Config:
+- script_location points here in alembic.ini
+- env.py loads models from src/data/models.py and settings from src/data/config.py

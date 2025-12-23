@@ -1,0 +1,502 @@
+#!/usr/bin/env python3
+"""
+Minimal CLI for simulating Monopoly games.
+
+This script demonstrates the game engine by running simulated games with
+simple AI players that make random or basic strategic decisions.
+
+Supports LLM agents via vLLM for AI-powered gameplay.
+"""
+
+import argparse
+import asyncio
+import uuid
+from datetime import datetime
+from typing import Optional, List
+
+from core import GameConfig, Player, create_game
+from core.game.game import ActionType
+from core.game.rules import apply_action, get_legal_actions
+from core.logging import GameLogger
+from core.agents import GreedyAgent, LLMAgent, RandomAgent
+
+
+def log_all_player_states(game, logger):
+    """Deprecated: use logger.log_turn_snapshot(game)."""
+    logger.log_turn_snapshot(game)
+
+
+def print_game_state(game):
+    """Print current game state."""
+    print("\n" + "=" * 60)
+    print(f"TURN {game.turn_number}")
+    print("=" * 60)
+
+    for player_id, player in sorted(game.players.items()):
+        if player.is_bankrupt:
+            status = "BANKRUPT"
+        elif player.in_jail:
+            status = f"IN JAIL ({player.jail_turns} turns)"
+        else:
+            space = game.board.get_space(player.position)
+            status = f"at {space.name}"
+
+        print(
+            f"Player {player_id} ({player.name}): ${player.cash} | "
+            f"{len(player.properties)} properties | {status}"
+        )
+
+
+def print_game_summary(game):
+    """Print final game summary."""
+    print("\n" + "=" * 60)
+    print("GAME OVER")
+    print("=" * 60)
+
+    if game.winner is not None:
+        winner = game.players[game.winner]
+        print(f"\nWinner: {winner.name}")
+        print(f"Final Cash: ${winner.cash}")
+        print(f"Properties Owned: {len(winner.properties)}")
+
+    print("\nFinal Standings:")
+    for player_id, player in sorted(game.players.items()):
+        worth = game._calculate_net_worth(player_id)
+        status = "BANKRUPT" if player.is_bankrupt else f"${worth}"
+        print(f"  {player.name}: {status}")
+
+    print(f"\nTotal Turns: {game.turn_number}")
+
+
+def create_llm_decision_callback(logger: GameLogger, player_names: List[str], decisions_buffer: List[dict]):
+    """Create a callback function for logging LLM decisions."""
+    def callback(decision_data: dict):
+        player_id = decision_data["player_id"]
+        logger.log_llm_decision(
+            turn_number=decision_data["turn_number"],
+            player_id=player_id,
+            player_name=player_names[player_id],
+            action_type=decision_data["chosen_action"]["action_type"],
+            params=decision_data["chosen_action"]["params"],
+            reasoning=decision_data["reasoning"],
+            used_fallback=decision_data["used_fallback"],
+            processing_time_ms=decision_data["processing_time_ms"],
+            model_version=decision_data["model_version"],
+            strategy=decision_data["strategy"],
+            error=decision_data.get("error"),
+            raw_response=decision_data.get("raw_response"),
+        )
+        # Buffer for database persistence
+        decisions_buffer.append(decision_data)
+    return callback
+
+
+async def simulate_game(
+    num_players: int = 4,
+    agent_type: str = "greedy",
+    seed: int = None,
+    verbose: bool = True,
+    max_turns: int = None,
+    log_file: str = None,
+    llm_strategy: str = "balanced",
+    llm_model: str = None,
+    llm_base_url: str = None,
+    save_to_db: bool = True,
+) -> None:
+    """
+    Simulate a complete game of Monopoly.
+
+    Args:
+        num_players: Number of players (2-8)
+        agent_type: Type of AI ('random', 'greedy', or 'llm')
+        seed: Random seed for reproducibility
+        verbose: Whether to print detailed output
+        max_turns: Maximum number of turns (for time limit variant)
+        log_file: Path to JSONL log file (None = auto-generate)
+        llm_strategy: Strategy for LLM agents (aggressive, balanced, defensive)
+        llm_model: Model name (uses LLM_MODEL env var if not specified)
+        llm_base_url: LLM API base URL (uses LLM_BASE_URL env var if not specified)
+        save_to_db: Whether to save game to database (default True)
+    """
+    # Create players
+    player_names = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Hank"]
+    players = [Player(i, player_names[i]) for i in range(num_players)]
+
+    # Database setup
+    game_id = None
+    game_uuid = None
+    db_initialized = False
+
+    if save_to_db:
+        try:
+            from data import init_db, close_db, session_scope, GameRepository
+            await init_db()
+            db_initialized = True
+
+            # Create game in database
+            game_id = f"game-{uuid.uuid4().hex[:8]}"
+            config_dict = {
+                "seed": seed,
+                "max_turns": max_turns,
+                "num_players": num_players,
+                "agent_type": agent_type,
+            }
+
+            async with session_scope() as session:
+                repo = GameRepository(session)
+                db_game = await repo.create_game(
+                    game_id=game_id,
+                    config=config_dict,
+                    metadata={"llm_strategy": llm_strategy} if agent_type == "llm" else {},
+                )
+                game_uuid = db_game.id
+
+                # Add players to database
+                for i in range(num_players):
+                    await repo.add_player(
+                        game_uuid=game_uuid,
+                        player_id=i,
+                        name=player_names[i],
+                        agent_type=agent_type,
+                    )
+
+                # Update game status to running
+                await repo.update_game_status(
+                    game_id=game_id,
+                    status="running",
+                    started_at=datetime.now(),
+                )
+
+            if verbose:
+                print(f"[DB] Game saved to database: {game_id}")
+        except Exception as e:
+            if verbose:
+                print(f"[DB] Database not available: {e}")
+            save_to_db = False
+            db_initialized = False
+
+    # Initialize logger (with game_id for database logging)
+    logger = GameLogger(log_file, game_id=game_id) if log_file is not None else GameLogger(game_id=game_id)
+
+    # Buffer for LLM decisions (for database persistence)
+    llm_decisions_buffer: List[dict] = []
+
+    # Create agents
+    if agent_type == "random":
+        agents = [RandomAgent(i, player_names[i]) for i in range(num_players)]
+    elif agent_type == "llm":
+        decision_callback = create_llm_decision_callback(logger, player_names, llm_decisions_buffer)
+        agents = [
+            LLMAgent(
+                i,
+                player_names[i],
+                model_name=llm_model,
+                strategy=llm_strategy,
+                base_url=llm_base_url,
+                decision_callback=decision_callback,
+            )
+            for i in range(num_players)
+        ]
+    else:
+        agents = [GreedyAgent(i, player_names[i]) for i in range(num_players)]
+
+    # Create game
+    config = GameConfig(seed=seed, time_limit_turns=max_turns)
+    game = create_game(config, players)
+
+    # Flush engine's GAME_START
+    logger.flush_engine_events(game)
+
+    if verbose:
+        print(f"Starting game with {num_players} players using {agent_type} agents")
+        print(f"Seed: {seed}")
+        print(f"Logging to: {logger.log_file}")
+
+    # Safety limit to prevent infinite loops in case of bugs
+    # The actual turn limit is handled by config.time_limit_turns
+    iteration_count = 0
+    max_iterations = 10000  # Safety limit for iterations, not turns
+
+    # Track auction state to cycle through bidders properly
+    auction_bidder_rotation = {}  # auction_id -> current_bidder_index
+    last_turn_number = -1  # Track turn changes
+
+    while not game.game_over and iteration_count < max_iterations:
+        iteration_count += 1
+        current_player = game.get_current_player()
+
+        # Flush any engine events (including initial or next turn_start)
+        logger.flush_engine_events(game)
+
+        # Log detailed player states at start of each new turn
+        if game.turn_number != last_turn_number:
+            last_turn_number = game.turn_number
+            log_all_player_states(game, logger)
+
+        logger.flush_engine_events(game)
+
+        if verbose and game.turn_number % 10 == 0 and iteration_count % 10 == 1:
+            print_game_state(game)
+
+        # Get agent
+        agent = agents[current_player.player_id]
+
+        # Play turn with action limit to prevent infinite loops
+        actions_this_turn = 0
+        max_actions_per_turn = 100  # Safety limit
+
+        while not game.game_over and actions_this_turn < max_actions_per_turn:
+            # Auction completion is handled by EventMapper flush
+
+            # Check if there's an active auction - cycle through all active bidders
+            if game.active_auction and game.active_auction.active_bidders:
+                auction_id = id(game.active_auction)
+
+                # Get sorted list of active bidders who can still bid
+                active_bidders = sorted([
+                    pid for pid in game.active_auction.active_bidders
+                    if game.active_auction.can_player_bid(pid)
+                ])
+
+                if not active_bidders:
+                    # No one can bid anymore, auction should complete
+                    # Pass all remaining bidders
+                    for pid in list(game.active_auction.active_bidders):
+                        game.active_auction.pass_turn(pid)
+                    continue
+
+                # Initialize or get current bidder index for this auction
+                if auction_id not in auction_bidder_rotation:
+                    auction_bidder_rotation[auction_id] = 0
+
+                # Get next bidder in round-robin fashion
+                bidder_idx = auction_bidder_rotation[auction_id] % len(active_bidders)
+                auction_player_id = active_bidders[bidder_idx]
+
+                legal_actions = get_legal_actions(game, auction_player_id)
+
+                if legal_actions:
+                    auction_agent = agents[auction_player_id]
+                    action = auction_agent.choose_action(game, legal_actions)
+                    if action:
+                        old_pos = game.players[auction_player_id].position
+                        success = apply_action(game, action, player_id=auction_player_id)
+                        if success:
+                            logger.flush_engine_events(game)
+                        actions_this_turn += 1
+
+                        # Move to next bidder
+                        auction_bidder_rotation[auction_id] += 1
+
+                        # Clean up if auction completed
+                        if not game.active_auction:
+                            if auction_id in auction_bidder_rotation:
+                                del auction_bidder_rotation[auction_id]
+
+                        continue
+                else:
+                    # No legal actions, force pass
+                    game.active_auction.pass_turn(auction_player_id)
+                    auction_bidder_rotation[auction_id] += 1
+                    continue
+
+            # Normal turn flow
+            legal_actions = get_legal_actions(game, current_player.player_id)
+
+            if not legal_actions:
+                # No legal actions available - force end turn to prevent infinite loop
+                if verbose:
+                    print(f"  WARNING: No legal actions for Player {current_player.player_id}, forcing end turn")
+                game.end_turn()
+                break
+
+            # Agent chooses action
+            action = agent.choose_action(game, legal_actions)
+
+            if action is None:
+                break
+
+            # Track position before action for movement logging
+            old_position = current_player.position
+
+            # Apply action
+            success = apply_action(game, action)
+            if success:
+                logger.flush_engine_events(game)
+
+            # After action, also flush any new internal events through logger
+            logger.flush_engine_events(game)
+
+            actions_this_turn += 1
+
+            if verbose and action.action_type in [
+                ActionType.BUY_PROPERTY,
+                ActionType.BUILD_HOUSE,
+                ActionType.BUILD_HOTEL,
+            ]:
+                print(f"  {agent.name}: {action.action_type.value}")
+
+            # End turn check
+            if action.action_type == ActionType.END_TURN:
+                break
+
+            # Check if current player changed (bankruptcy, etc)
+            if game.get_current_player().player_id != current_player.player_id:
+                break
+
+        if actions_this_turn >= max_actions_per_turn:
+            # Force end turn if stuck
+            if verbose:
+                print(f"  WARNING: Player {current_player.player_id} hit action limit, forcing end turn")
+            game.end_turn()
+
+    # Check if we hit the safety limit
+    if iteration_count >= max_iterations:
+        print(f"\n!!! SAFETY LIMIT HIT ({max_iterations} iterations) !!!")
+        print(f"Game may have an infinite loop bug.")
+        print(f"Game state: turn={game.turn_number}, game_over={game.game_over}")
+
+    # Flush final engine events (includes game_end). Optionally log final standings.
+    logger.flush_engine_events(game)
+
+    # Flush all pending events to database
+    if db_initialized and game_id:
+        await logger.flush_to_db()
+
+    # Update game status in database
+    if db_initialized and game_id:
+        try:
+            from data import session_scope, GameRepository, close_db
+
+            async with session_scope() as session:
+                repo = GameRepository(session)
+
+                # Update game status
+                await repo.update_game_status(
+                    game_id=game_id,
+                    status="finished",
+                    finished_at=datetime.now(),
+                    winner_id=game.winner,
+                    total_turns=game.turn_number,
+                )
+
+                # Update player results
+                for player_id, player in game.players.items():
+                    net_worth = game._calculate_net_worth(player_id)
+                    await repo.update_player_results(
+                        game_uuid=game_uuid,
+                        player_id=player_id,
+                        final_cash=player.cash,
+                        final_net_worth=net_worth,
+                        is_winner=(player_id == game.winner),
+                        is_bankrupt=player.is_bankrupt,
+                    )
+
+                # Save LLM decisions to database
+                if llm_decisions_buffer:
+                    for decision in llm_decisions_buffer:
+                        await repo.add_llm_decision(
+                            game_uuid=game_uuid,
+                            player_id=decision["player_id"],
+                            turn_number=decision["turn_number"],
+                            sequence_number=decision.get("sequence_number", 0),
+                            game_state=decision.get("game_state", {}),
+                            player_state=decision.get("player_state", {}),
+                            available_actions=decision.get("available_actions", {}),
+                            prompt=decision.get("prompt", ""),
+                            reasoning=decision.get("reasoning", ""),
+                            chosen_action=decision.get("chosen_action", {}),
+                            strategy_description=decision.get("strategy"),
+                            processing_time_ms=decision.get("processing_time_ms"),
+                            model_version=decision.get("model_version"),
+                        )
+
+            await close_db()
+            if verbose:
+                print(f"[DB] Game results saved to database")
+        except Exception as e:
+            if verbose:
+                print(f"[DB] Failed to update game in database: {e}")
+
+    if verbose:
+        print_game_summary(game)
+        print(f"\nGame logged to: {logger.log_file}")
+
+    return game
+
+
+def main():
+    """Main entry point for CLI."""
+    parser = argparse.ArgumentParser(description="Simulate a Monopoly game")
+    parser.add_argument(
+        "--players",
+        type=int,
+        default=4,
+        choices=range(2, 9),
+        help="Number of players (2-8)",
+    )
+    parser.add_argument(
+        "--agent",
+        type=str,
+        default="greedy",
+        choices=["random", "greedy", "llm"],
+        help="AI agent type (llm requires vLLM server)",
+    )
+    parser.add_argument("--seed", type=int, default=None, help="Random seed")
+    parser.add_argument("--quiet", action="store_true", help="Reduce output verbosity")
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=None,
+        help="Maximum number of turns (time limit variant)",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default=None,
+        help="Path to JSONL log file (default: auto-generated timestamp)",
+    )
+    # LLM-specific options
+    parser.add_argument(
+        "--llm-strategy",
+        type=str,
+        default="balanced",
+        choices=["aggressive", "balanced", "defensive"],
+        help="Strategy for LLM agents",
+    )
+    parser.add_argument(
+        "--llm-model",
+        type=str,
+        default=None,
+        help="Model name (default: uses LLM_MODEL env var or 'gemma3:4b')",
+    )
+    parser.add_argument(
+        "--llm-base-url",
+        type=str,
+        default=None,
+        help="LLM API base URL (default: uses LLM_BASE_URL env var or 'http://localhost:11434/v1')",
+    )
+    parser.add_argument(
+        "--no-db",
+        action="store_true",
+        help="Disable database saving (only write to JSONL file)",
+    )
+
+    args = parser.parse_args()
+
+    asyncio.run(simulate_game(
+        num_players=args.players,
+        agent_type=args.agent,
+        seed=args.seed,
+        verbose=not args.quiet,
+        max_turns=args.max_turns,
+        log_file=args.log_file,
+        llm_strategy=args.llm_strategy,
+        llm_model=args.llm_model,
+        llm_base_url=args.llm_base_url,
+        save_to_db=not args.no_db,
+    ))
+
+
+if __name__ == "__main__":
+    main()

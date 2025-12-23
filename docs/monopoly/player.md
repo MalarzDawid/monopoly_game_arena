@@ -5,7 +5,7 @@ Players are defined once and passed to `create_game`. Runtime state lives in `Pl
 Example:
 
 ```python
-from monopoly import Player, create_game, GameConfig
+from core import Player, create_game, GameConfig
 
 players = [Player(0, "Alice"), Player(1, "Bob")]
 game = create_game(GameConfig(seed=1), players)
@@ -16,8 +16,8 @@ print(alice.cash, alice.position, alice.in_jail)
 
 ### Reference
 
-::: monopoly.player.Player
+::: core.game.player.Player
 
-::: monopoly.player.PlayerState
+::: core.game.player.PlayerState
 
-::: monopoly.player.PropertyOwnership
+::: core.game.player.PropertyOwnership

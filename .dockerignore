@@ -1,0 +1,74 @@
+# Git
+.git
+.gitignore
+
+# Python cache and build
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+.eggs
+dist
+build
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Test coverage
+htmlcov
+.coverage
+coverage.xml
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE and editors
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Documentation (built separately)
+docs/
+site/
+*.md
+!README.md
+
+# Tests (not needed in production image)
+tests/
+test_*.py
+
+# Dashboard (if running as separate container)
+# dashboard/
+
+# Game logs and data files
+*.log
+*.jsonl
+*.pdf
+
+# Development files
+Makefile
+docker-compose*.yml
+*.Dockerfile
+CLAUDE.md
+REFACTOR.md
+REORGANIZATION_PLAN.md
+
+# Misc
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
+
+# UV cache
+.uv-cache/

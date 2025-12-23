@@ -4,24 +4,24 @@ Spaces define their rent and behaviors. Properties compute rent by houses/hotel 
 
 ### Reference
 
-::: monopoly.spaces.Space
+::: core.game.spaces.Space
 
-::: monopoly.spaces.PropertySpace
+::: core.game.spaces.PropertySpace
 
-::: monopoly.spaces.RailroadSpace
+::: core.game.spaces.RailroadSpace
 
-::: monopoly.spaces.UtilitySpace
+::: core.game.spaces.UtilitySpace
 
-::: monopoly.spaces.TaxSpace
+::: core.game.spaces.TaxSpace
 
-::: monopoly.spaces.GoSpace
+::: core.game.spaces.GoSpace
 
-::: monopoly.spaces.ChanceSpace
+::: core.game.spaces.ChanceSpace
 
-::: monopoly.spaces.CommunityChestSpace
+::: core.game.spaces.CommunityChestSpace
 
-::: monopoly.spaces.JailSpace
+::: core.game.spaces.JailSpace
 
-::: monopoly.spaces.GoToJailSpace
+::: core.game.spaces.GoToJailSpace
 
-::: monopoly.spaces.FreeParkingSpace
+::: core.game.spaces.FreeParkingSpace
