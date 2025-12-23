@@ -675,6 +675,7 @@ import type {
   LuckVsSkillData,
   KillZoneData,
   GameDurationBucket,
+  StrategyPropertyData,
 } from '../types/game'
 
 // Mock data for fallback
@@ -787,6 +788,35 @@ export function useGameDurationHistogram(bucketSize: number = 20) {
       } catch (e) {
         console.warn('Using mock duration histogram', e)
         return mockDurationHistogram
+      }
+    },
+    staleTime: 30000,
+    retry: false,
+  })
+}
+
+// Mock data for strategy-property correlation
+const mockStrategyPropertyData: StrategyPropertyData[] = [
+  { strategy: 'aggressive', position: 39, color_group: 'Dark Blue', purchase_count: 15 },
+  { strategy: 'aggressive', position: 37, color_group: 'Dark Blue', purchase_count: 12 },
+  { strategy: 'aggressive', position: 24, color_group: 'Red', purchase_count: 18 },
+  { strategy: 'balanced', position: 16, color_group: 'Orange', purchase_count: 22 },
+  { strategy: 'balanced', position: 18, color_group: 'Orange', purchase_count: 20 },
+  { strategy: 'defensive', position: 5, color_group: 'Railroad', purchase_count: 25 },
+  { strategy: 'defensive', position: 15, color_group: 'Railroad', purchase_count: 23 },
+  { strategy: 'Greedy', position: 39, color_group: 'Dark Blue', purchase_count: 30 },
+  { strategy: 'Greedy', position: 24, color_group: 'Red', purchase_count: 28 },
+]
+
+export function useStrategyPropertyCorrelation() {
+  return useQuery({
+    queryKey: ['strategyPropertyCorrelation'],
+    queryFn: async () => {
+      try {
+        return await api.getStrategyPropertyCorrelation()
+      } catch (e) {
+        console.warn('Using mock strategy-property correlation', e)
+        return mockStrategyPropertyData
       }
     },
     staleTime: 30000,

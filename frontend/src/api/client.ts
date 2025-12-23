@@ -136,6 +136,11 @@ export const api = {
     fetchApi<import('../types/game').GameDurationBucket[]>(
       `/api/dashboard/game_duration_histogram?bucket_size=${bucketSize}`
     ),
+
+  getStrategyPropertyCorrelation: () =>
+    fetchApi<import('../types/game').StrategyPropertyData[]>(
+      '/api/dashboard/strategy_property_correlation'
+    ),
 }
 
 export { ApiError }

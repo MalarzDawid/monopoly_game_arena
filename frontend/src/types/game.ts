@@ -263,3 +263,11 @@ export interface GameDurationBucket {
   bucket_label: string
   game_count: number
 }
+
+// Strategy-Property correlation data for heatmap
+export interface StrategyPropertyData {
+  strategy: string
+  position: number
+  color_group: string
+  purchase_count: number
+}

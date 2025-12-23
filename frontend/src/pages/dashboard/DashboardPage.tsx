@@ -6,6 +6,7 @@ import {
   LuckVsSkillScatter,
   KillZonesChart,
   GameDurationHistogram,
+  StrategyPropertyHeatmap,
 } from '@/components/dashboard'
 import {
   useGlobalStats,
@@ -13,6 +14,7 @@ import {
   useLuckVsSkill,
   useKillZones,
   useGameDurationHistogram,
+  useStrategyPropertyCorrelation,
 } from '@/hooks/useGameData'
 import { RefreshCw, AlertCircle, BarChart3 } from 'lucide-react'
 
@@ -49,7 +51,13 @@ export function DashboardPage() {
     refetch: refetchDuration,
   } = useGameDurationHistogram(20)
 
-  const isLoading = statsLoading || leaderboardLoading || luckLoading || killZonesLoading || durationLoading
+  const {
+    data: strategyProperty,
+    isLoading: strategyPropertyLoading,
+    refetch: refetchStrategyProperty,
+  } = useStrategyPropertyCorrelation()
+
+  const isLoading = statsLoading || leaderboardLoading || luckLoading || killZonesLoading || durationLoading || strategyPropertyLoading
   const hasError = statsError
 
   const handleRefreshAll = () => {
@@ -58,6 +66,7 @@ export function DashboardPage() {
     refetchLuck()
     refetchKillZones()
     refetchDuration()
+    refetchStrategyProperty()
   }
 
   return (
@@ -123,9 +132,13 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* Section 4: Game Duration Histogram */}
+      {/* Section 4: Game Duration & Strategy Correlation */}
       <section>
-        <GameDurationHistogram data={durationHistogram} loading={durationLoading} />
+        <h2 className="text-lg font-semibold mb-4">Game Patterns</h2>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <GameDurationHistogram data={durationHistogram} loading={durationLoading} />
+          <StrategyPropertyHeatmap data={strategyProperty} loading={strategyPropertyLoading} />
+        </div>
       </section>
 
       {/* Footer Info */}
