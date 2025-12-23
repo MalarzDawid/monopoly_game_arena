@@ -302,6 +302,7 @@ async def model_leaderboard(session: AsyncSession = Depends(get_session)) -> Lis
     Leaderboard grouping by model/agent type with win rates and average ROI.
     Groups LLM players by llm_model_name and non-LLM by agent_type.
     Falls back to llm_decisions table for older games without player LLM info.
+    Shows ALL model/strategy combinations that exist in the database.
     """
     query = """
         WITH llm_decision_info AS (
@@ -314,7 +315,8 @@ async def model_leaderboard(session: AsyncSession = Depends(get_session)) -> Lis
             FROM llm_decisions d
             ORDER BY d.game_uuid, d.player_id, d.sequence_number DESC
         ),
-        player_performance AS (
+        player_info AS (
+            -- All players with their model/strategy info
             SELECT
                 p.game_uuid,
                 p.player_id,
@@ -335,6 +337,7 @@ async def model_leaderboard(session: AsyncSession = Depends(get_session)) -> Lis
                     )
                     ELSE 'Scripted'
                 END as strategy_profile,
+                g.status as game_status,
                 p.is_winner,
                 p.is_bankrupt,
                 p.final_net_worth,
@@ -342,22 +345,26 @@ async def model_leaderboard(session: AsyncSession = Depends(get_session)) -> Lis
             FROM players p
             JOIN games g ON p.game_uuid = g.id
             LEFT JOIN llm_decision_info ldi ON ldi.game_uuid = p.game_uuid AND ldi.player_id = p.player_id
-            WHERE g.status = 'finished'
         )
         SELECT
             model_name,
             strategy_profile,
             COUNT(DISTINCT game_uuid) as games_played,
+            COUNT(DISTINCT game_uuid) FILTER (WHERE game_status = 'finished') as finished_games,
             SUM(CASE WHEN is_winner THEN 1 ELSE 0 END) as wins,
             SUM(CASE WHEN is_bankrupt THEN 1 ELSE 0 END) as bankruptcies,
-            ROUND(
-                SUM(CASE WHEN is_winner THEN 1 ELSE 0 END)::numeric /
-                NULLIF(COUNT(*), 0) * 100,
-                2
-            ) as win_rate,
-            ROUND(AVG(COALESCE(final_net_worth, 0))::numeric, 0) as avg_net_worth,
-            ROUND(AVG(COALESCE(final_cash, 0))::numeric, 0) as avg_final_cash
-        FROM player_performance
+            CASE
+                WHEN COUNT(*) FILTER (WHERE game_status = 'finished') > 0 THEN
+                    ROUND(
+                        SUM(CASE WHEN is_winner THEN 1 ELSE 0 END)::numeric /
+                        COUNT(*) FILTER (WHERE game_status = 'finished') * 100,
+                        2
+                    )
+                ELSE NULL
+            END as win_rate,
+            ROUND(AVG(COALESCE(final_net_worth, 0)) FILTER (WHERE game_status = 'finished')::numeric, 0) as avg_net_worth,
+            ROUND(AVG(COALESCE(final_cash, 0)) FILTER (WHERE game_status = 'finished')::numeric, 0) as avg_final_cash
+        FROM player_info
         GROUP BY model_name, strategy_profile
         ORDER BY win_rate DESC NULLS LAST, games_played DESC
     """

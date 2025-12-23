@@ -138,7 +138,9 @@ export function ModelLeaderboardTable({ data, loading = false }: ModelLeaderboar
             <tbody>
               {sortedData.map((entry, index) => {
                 const isLlm = !['greedy', 'random', 'human'].includes(entry.model_name.toLowerCase())
-                const winRate = Number(entry.win_rate) || 0
+                const hasWinRate = entry.win_rate !== null && entry.win_rate !== undefined
+                const winRate = hasWinRate ? Number(entry.win_rate) : null
+                const hasNetWorth = entry.avg_net_worth !== null && entry.avg_net_worth !== undefined
 
                 return (
                   <tr
@@ -146,7 +148,7 @@ export function ModelLeaderboardTable({ data, loading = false }: ModelLeaderboar
                     className="border-b last:border-0 hover:bg-muted/50"
                   >
                     <td className="py-3">
-                      {index === 0 && sortKey === 'win_rate' && sortOrder === 'desc' ? (
+                      {index === 0 && sortKey === 'win_rate' && sortOrder === 'desc' && hasWinRate ? (
                         <Trophy className="h-4 w-4 text-yellow-500" />
                       ) : (
                         <span className="text-muted-foreground">{index + 1}</span>
@@ -168,29 +170,37 @@ export function ModelLeaderboardTable({ data, loading = false }: ModelLeaderboar
                       </Badge>
                     </td>
                     <td className="py-3">
-                      <div className="flex items-center gap-1">
-                        {winRate >= 50 ? (
-                          <TrendingUp className="h-4 w-4 text-green-500" />
-                        ) : winRate >= 25 ? (
-                          <span className="w-4" />
-                        ) : (
-                          <TrendingDown className="h-4 w-4 text-red-500" />
-                        )}
-                        <span className={winRate >= 50 ? 'text-green-600 font-medium' : winRate < 25 ? 'text-red-600' : ''}>
-                          {winRate.toFixed(1)}%
-                        </span>
-                      </div>
+                      {hasWinRate && winRate !== null ? (
+                        <div className="flex items-center gap-1">
+                          {winRate >= 50 ? (
+                            <TrendingUp className="h-4 w-4 text-green-500" />
+                          ) : winRate >= 25 ? (
+                            <span className="w-4" />
+                          ) : (
+                            <TrendingDown className="h-4 w-4 text-red-500" />
+                          )}
+                          <span className={winRate >= 50 ? 'text-green-600 font-medium' : winRate < 25 ? 'text-red-600' : ''}>
+                            {winRate.toFixed(1)}%
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">N/A</span>
+                      )}
                     </td>
                     <td className="py-3 text-muted-foreground">
                       {entry.games_played}
-                      <span className="text-xs ml-1">({entry.wins}W)</span>
+                      <span className="text-xs ml-1">({entry.wins ?? 0}W)</span>
                     </td>
                     <td className="py-3">
-                      ${(entry.avg_net_worth ?? 0).toLocaleString()}
+                      {hasNetWorth ? (
+                        <span>${Number(entry.avg_net_worth).toLocaleString()}</span>
+                      ) : (
+                        <span className="text-muted-foreground">N/A</span>
+                      )}
                     </td>
                     <td className="py-3">
-                      <span className={entry.bankruptcies > 5 ? 'text-red-600' : ''}>
-                        {entry.bankruptcies}
+                      <span className={(entry.bankruptcies ?? 0) > 5 ? 'text-red-600' : ''}>
+                        {entry.bankruptcies ?? 0}
                       </span>
                     </td>
                   </tr>
