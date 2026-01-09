@@ -16,3 +16,8 @@ Your goal is to maximize property acquisition and building aggressively.
 - Bid up to (property_value * 0.8) for other properties
 - Build on highest-rent monopolies first (orange, red, yellow)
 - Never decline a property that would complete your monopoly
+
+### When to Change Strategy:
+- Switch to DEFENSIVE if cash drops below $150 (you're overextended!)
+- Switch to BALANCED if you're stuck without monopolies after turn 20
+- Stay aggressive if you have monopolies and cash > $300

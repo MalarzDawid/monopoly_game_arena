@@ -78,6 +78,7 @@ class LLMAgent(Agent):
         base_url: str = None,
         api_key: Optional[str] = None,
         decision_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_strategy_change: Optional[Callable[[int, str, str], None]] = None,
     ):
         """
         Initialize the LLM agent.
@@ -90,6 +91,7 @@ class LLMAgent(Agent):
             base_url: Base URL for OpenAI-compatible API (default from LLM settings).
             api_key: Optional API key for providers that require authentication.
             decision_callback: Optional callback(decision_data) for DB logging.
+            on_strategy_change: Optional callback(player_id, old_strategy, new_strategy) when strategy changes.
         """
         super().__init__(player_id, name)
         self.model_name = model_name or DEFAULT_LLM_MODEL
@@ -97,6 +99,7 @@ class LLMAgent(Agent):
         self.base_url = base_url or DEFAULT_LLM_BASE_URL
         self.api_key = api_key if api_key is not None else DEFAULT_LLM_API_KEY
         self.decision_callback = decision_callback
+        self.on_strategy_change = on_strategy_change
         # Allow injected client; fallback to lazy creation
         self._client: Optional[httpx.Client] = None
 
@@ -114,6 +117,44 @@ class LLMAgent(Agent):
             return path.read_text(encoding="utf-8")
         logger.warning(f"Template not found: {path}")
         return ""
+
+    def _change_strategy(self, new_strategy: str) -> None:
+        """
+        Change the agent's strategy during the game.
+
+        Args:
+            new_strategy: New strategy name (aggressive, balanced, defensive)
+        """
+        if new_strategy not in self.STRATEGIES:
+            logger.warning(f"Invalid strategy '{new_strategy}', keeping current: {self.strategy}")
+            return
+
+        old_strategy = self.strategy
+        self.strategy = new_strategy
+        self._strategy_prompt = self._load_template(f"{new_strategy}.txt")
+        logger.info(f"Player {self.player_id} strategy changed to: {new_strategy}")
+
+        # Notify callback about strategy change
+        if self.on_strategy_change:
+            try:
+                self.on_strategy_change(self.player_id, old_strategy, new_strategy)
+            except Exception as e:
+                logger.error(f"Strategy change callback error: {e}")
+
+    def change_strategy(self, new_strategy: str) -> bool:
+        """
+        Public method to change strategy (for external/manual changes).
+
+        Args:
+            new_strategy: New strategy name (aggressive, balanced, defensive)
+
+        Returns:
+            True if strategy was changed, False if invalid
+        """
+        if new_strategy.lower() not in self.STRATEGIES:
+            return False
+        self._change_strategy(new_strategy.lower())
+        return True
 
     def choose_action(self, game: GameState, legal_actions: List[Action]) -> Action:
         """
@@ -158,9 +199,16 @@ class LLMAgent(Agent):
                     logger.info(f"LLM Player {self.player_id}: Retry attempt {attempt + 1}/{max_retries}")
                     raw_response = self._query_llm(retry_prompt)
 
-                chosen_action, rationale = self._parse_response(raw_response, legal_actions)
+                chosen_action, rationale, new_strategy = self._parse_response(raw_response, legal_actions)
 
                 if chosen_action is not None:
+                    # Handle strategy change if requested by LLM
+                    if new_strategy and new_strategy != self.strategy:
+                        old_strategy = self.strategy
+                        self._change_strategy(new_strategy)
+                        logger.info(
+                            f"LLM Player {self.player_id} changed strategy: {old_strategy} -> {new_strategy}"
+                        )
                     # Success - break out of retry loop
                     break
                 else:
@@ -358,6 +406,9 @@ class LLMAgent(Agent):
         prompt_parts = [
             self._system_prompt,
             "",
+            f"## Your Current Strategy: {self.strategy.upper()}",
+            "(You can change this by adding \"new_strategy\" to your response)",
+            "",
             self._strategy_prompt,
             "",
             "## Current Game State",
@@ -462,7 +513,7 @@ Respond now with the correct JSON:"""
             Tuple of (Action or None, rationale string)
         """
         if not raw_response:
-            return None, "Empty response"
+            return None, "Empty response", None
 
         # Clean up response - extract JSON
         text = raw_response.strip()
@@ -472,28 +523,33 @@ Respond now with the correct JSON:"""
         json_end = text.rfind("}") + 1
 
         if json_start == -1 or json_end == 0:
-            return None, f"No JSON found in response: {text[:100]}"
+            return None, f"No JSON found in response: {text[:100]}", None
 
         json_str = text[json_start:json_end]
 
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError as e:
-            return None, f"JSON parse error: {e}"
+            return None, f"JSON parse error: {e}", None
 
         # Validate required fields
         action_type_str = data.get("action_type")
         params = data.get("params", {})
         rationale = data.get("rationale", "")
+        new_strategy = data.get("new_strategy")  # Optional strategy change
+
+        # Validate new_strategy if provided
+        if new_strategy and new_strategy.lower() not in self.STRATEGIES:
+            new_strategy = None  # Invalid strategy, ignore
 
         if not action_type_str:
-            return None, "Missing action_type in response"
+            return None, "Missing action_type in response", None
 
         # Convert to ActionType (normalize to lowercase)
         try:
             action_type = ActionType(action_type_str.lower())
         except ValueError:
-            return None, f"Invalid action_type: {action_type_str}"
+            return None, f"Invalid action_type: {action_type_str}", None
 
         # Validate action is in legal actions
         legal_action = None
@@ -509,7 +565,7 @@ Respond now with the correct JSON:"""
                     break
 
         if legal_action is None:
-            return None, f"Action {action_type_str} not in legal actions"
+            return None, f"Action {action_type_str} not in legal actions", None
 
         # Create action with LLM's params (validated)
         result_action = Action(action_type, **params)
@@ -517,10 +573,10 @@ Respond now with the correct JSON:"""
         # Ensure required params are present
         if action_type == ActionType.BID:
             if "amount" not in params:
-                return None, "BID action requires 'amount' param"
+                return None, "BID action requires 'amount' param", None
             result_action.params["amount"] = int(params["amount"])
 
-        return result_action, rationale
+        return result_action, rationale, new_strategy.lower() if new_strategy else None
 
     def _get_fallback_action(self, legal_actions: List[Action]) -> Action:
         """Get a safe fallback action when LLM fails."""

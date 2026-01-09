@@ -101,6 +101,15 @@ class GameRunner:
             # Queue for database persistence
             self._pending_llm_decisions.append(decision_data)
 
+        # Callback for when LLM changes its own strategy
+        def on_strategy_change(player_id: int, old_strategy: str, new_strategy: str) -> None:
+            # Update llm_strategies list so status endpoint reflects the change
+            if self.llm_strategies and player_id < len(self.llm_strategies):
+                self.llm_strategies[player_id] = new_strategy
+            logger.info(
+                f"LLM Player {player_id} self-changed strategy: {old_strategy} -> {new_strategy}"
+            )
+
         # Prepare agents for non-human players if not provided
         if agents is None:
             for i, role in enumerate(self.roles):
@@ -120,14 +129,16 @@ class GameRunner:
                         names[i],
                         strategy=strategy,
                         decision_callback=llm_decision_callback,
+                        on_strategy_change=on_strategy_change,
                     )
                 else:
                     self.agents[i] = GreedyAgent(i, names[i])
 
-        # Ensure all LLMAgents (even pre-built ones) have the decision callback wired
+        # Ensure all LLMAgents (even pre-built ones) have callbacks wired
         for agent in self.agents:
             if isinstance(agent, LLMAgent):
                 agent.decision_callback = llm_decision_callback
+                agent.on_strategy_change = on_strategy_change
 
     async def start(self) -> None:
         # Flush initial GAME_START and TURN_START
@@ -492,6 +503,44 @@ class GameRunner:
         self._tick = max(0.0, (tick_ms or 0) / 1000.0)
         # Nudge loop so speed applies immediately
         self._new_action_event.set()
+
+    async def change_player_strategy(
+        self, player_id: int, new_strategy: str
+    ) -> tuple[bool, str | None, str | None]:
+        """
+        Change an LLM player's strategy.
+
+        Args:
+            player_id: The player ID to change
+            new_strategy: New strategy (aggressive, balanced, defensive)
+
+        Returns:
+            Tuple of (success, old_strategy, error_message)
+        """
+        if player_id < 0 or player_id >= len(self.agents):
+            return False, None, f"Invalid player_id: {player_id}"
+
+        agent = self.agents[player_id]
+
+        if agent is None:
+            return False, None, f"Player {player_id} is a human player"
+
+        if not isinstance(agent, LLMAgent):
+            return False, None, f"Player {player_id} is not an LLM agent (type: {type(agent).__name__})"
+
+        old_strategy = agent.strategy
+        success = agent.change_strategy(new_strategy)
+
+        if success:
+            # Also update the llm_strategies list for status reporting
+            if self.llm_strategies and player_id < len(self.llm_strategies):
+                self.llm_strategies[player_id] = new_strategy
+            logger.info(
+                f"Player {player_id} strategy changed: {old_strategy} -> {new_strategy}"
+            )
+            return True, old_strategy, None
+        else:
+            return False, old_strategy, f"Invalid strategy: {new_strategy}"
 
     async def list_turns(self) -> List[Dict[str, int]]:
         # Build ranges from recorded indices

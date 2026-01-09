@@ -1,9 +1,16 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { formatCurrency } from '@/lib/utils'
 import type { Player, PlayerLiveStats } from '@/types/game'
-import { Home, CreditCard, Lock, ArrowDownToLine, ArrowUpToLine } from 'lucide-react'
+import { Home, CreditCard, Lock, ArrowDownToLine, ArrowUpToLine, Brain } from 'lucide-react'
 
 interface PlayerCardsProps {
   players: Player[]
@@ -12,6 +19,7 @@ interface PlayerCardsProps {
   roles?: string[]
   llmStrategies?: string[]
   loading?: boolean
+  onStrategyChange?: (playerId: number, strategy: string) => void
 }
 
 function formatAgentLabel(role: string, strategy?: string): string {
@@ -48,7 +56,9 @@ function findStats(stats: PlayerLiveStats[] | undefined, playerId: number): Play
   return stats?.find((s) => s.player_id === playerId)
 }
 
-export function PlayerCards({ players, currentPlayerId, stats, roles, llmStrategies, loading = false }: PlayerCardsProps) {
+const STRATEGIES = ['aggressive', 'balanced', 'defensive'] as const
+
+export function PlayerCards({ players, currentPlayerId, stats, roles, llmStrategies, loading = false, onStrategyChange }: PlayerCardsProps) {
   if (loading) {
     return (
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -89,9 +99,30 @@ export function PlayerCards({ players, currentPlayerId, stats, roles, llmStrateg
                 <div>
                   <p className="font-medium">{player.name}</p>
                   {roles && roles[player.player_id] && (
-                    <p className="text-xs text-muted-foreground">
-                      {formatAgentLabel(roles[player.player_id], llmStrategies?.[player.player_id])}
-                    </p>
+                    roles[player.player_id] === 'llm' && onStrategyChange ? (
+                      <div className="flex items-center gap-1 mt-1">
+                        <Brain className="h-3 w-3 text-purple-500" />
+                        <Select
+                          value={llmStrategies?.[player.player_id] || 'balanced'}
+                          onValueChange={(value) => onStrategyChange(player.player_id, value)}
+                        >
+                          <SelectTrigger className="h-6 text-xs w-[100px] px-2">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STRATEGIES.map((s) => (
+                              <SelectItem key={s} value={s} className="text-xs">
+                                {s.charAt(0).toUpperCase() + s.slice(1)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {formatAgentLabel(roles[player.player_id], llmStrategies?.[player.player_id])}
+                      </p>
+                    )
                   )}
                   <p className="text-lg font-bold">{formatCurrency(player.cash)}</p>
                 </div>

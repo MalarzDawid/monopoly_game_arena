@@ -218,7 +218,7 @@ async def latest_events_for_game(game_id: str, limit: int = 10, session: AsyncSe
 async def llm_decisions_for_game(
     game_id: str,
     player_id: Optional[int] = None,
-    limit: int = 100,
+    limit: int = 10000,
     session: AsyncSession = Depends(get_session),
 ) -> List[Dict[str, Any]]:
     """

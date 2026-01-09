@@ -245,6 +245,39 @@ async def resume_game(game_id: str):
     return {"game_id": game_id, "paused": False}
 
 
+class StrategyChangeRequest(BaseModel):
+    player_id: int
+    strategy: str = Field(pattern=r"^(aggressive|balanced|defensive)$")
+
+
+class StrategyChangeResponse(BaseModel):
+    success: bool
+    player_id: int
+    old_strategy: str | None
+    new_strategy: str
+    message: str | None = None
+
+
+@app.post("/games/{game_id}/strategy", response_model=StrategyChangeResponse)
+async def change_player_strategy(game_id: str, req: StrategyChangeRequest):
+    """Change an LLM player's strategy during the game."""
+    runner = await registry.get(game_id)
+    if not runner:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    success, old_strategy, message = await runner.change_player_strategy(
+        req.player_id, req.strategy
+    )
+
+    return StrategyChangeResponse(
+        success=success,
+        player_id=req.player_id,
+        old_strategy=old_strategy,
+        new_strategy=req.strategy if success else (old_strategy or "unknown"),
+        message=message,
+    )
+
+
 @app.get("/games/{game_id}/turns")
 async def list_turns(game_id: str):
     runner = await registry.get(game_id)

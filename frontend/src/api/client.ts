@@ -69,6 +69,18 @@ export const api = {
       body: JSON.stringify({ tick_ms: tickMs }),
     }),
 
+  changePlayerStrategy: (gameId: string, playerId: number, strategy: string) =>
+    fetchApi<{
+      success: boolean
+      player_id: number
+      old_strategy: string | null
+      new_strategy: string
+      message: string | null
+    }>(`/games/${gameId}/strategy`, {
+      method: 'POST',
+      body: JSON.stringify({ player_id: playerId, strategy }),
+    }),
+
   // Event Queries
   getTurns: (gameId: string) =>
     fetchApi<{ game_id: string; turns: import('../types/game').TurnInfo[] }>(

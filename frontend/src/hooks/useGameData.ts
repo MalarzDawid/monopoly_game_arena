@@ -210,6 +210,19 @@ export function useGameControl(gameId: string) {
   return { pause, resume, setSpeed }
 }
 
+// Change LLM player strategy during game
+export function useChangeStrategy(gameId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ playerId, strategy }: { playerId: number; strategy: string }) =>
+      api.changePlayerStrategy(gameId, playerId, strategy),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['gameStatus', gameId] })
+    },
+  })
+}
+
 // Mock data for charts when API unavailable
 export function useCashHistory(gameId: string | null) {
   return useQuery({
@@ -346,7 +359,7 @@ export function useLivePlayerStats(gameId: string | null, limit: number = 1000) 
 }
 
 // LLM decision feed for a game (optionally filtered by player)
-export function useLlmDecisions(gameId: string | null, playerId?: number, limit: number = 100) {
+export function useLlmDecisions(gameId: string | null, playerId?: number, limit: number = 10000) {
   return useQuery({
     queryKey: ['llmDecisions', gameId, playerId, limit],
     queryFn: async () => {

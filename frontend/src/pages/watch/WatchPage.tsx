@@ -30,6 +30,7 @@ import {
   useNetWorthHistory,
   useRentByColorGroup,
   useAssetAllocation,
+  useChangeStrategy,
 } from '@/hooks/useGameData'
 import { mockSnapshot, mockEvents } from '@/api/mocks'
 import { Plus, Gamepad2, AlertCircle } from 'lucide-react'
@@ -78,6 +79,7 @@ export function WatchPage() {
   // Game control mutations
   const { pause, resume, setSpeed } = useGameControl(gameId || '')
   const createGame = useCreateGame()
+  const changeStrategy = useChangeStrategy(gameId || '')
 
   // Use mock data if API unavailable
   const displaySnapshot = snapshot || mockSnapshot
@@ -129,6 +131,12 @@ export function WatchPage() {
     if (inputGameId.trim()) {
       setGameId(inputGameId.trim())
       setInputGameId('')
+    }
+  }
+
+  const handleStrategyChange = (playerId: number, strategy: string) => {
+    if (gameId) {
+      changeStrategy.mutate({ playerId, strategy })
     }
   }
 
@@ -373,6 +381,7 @@ export function WatchPage() {
           roles={displayStatus.roles}
           llmStrategies={displayStatus.llm_strategies}
           loading={isLoading}
+          onStrategyChange={gameId ? handleStrategyChange : undefined}
         />
       )}
 
