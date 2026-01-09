@@ -87,6 +87,11 @@ class GameState:
         self.last_dice_roll: Optional[Tuple[int, int]] = None
         self.pending_dice_roll = True
 
+        # Track mortgage/unmortgage actions this turn to prevent infinite loops
+        # Stores positions that were mortgaged or unmortgaged this turn
+        self._mortgaged_this_turn: Set[int] = set()
+        self._unmortgaged_this_turn: Set[int] = set()
+
         self.event_log.log(
             EventType.GAME_START,
             details={
@@ -1009,6 +1014,9 @@ class GameState:
             },
         )
 
+        # Track to prevent mortgage/unmortgage loops
+        self._mortgaged_this_turn.add(property_position)
+
         return True
 
     def unmortgage_property(self, player_id: int, property_position: int) -> bool:
@@ -1053,6 +1061,9 @@ class GameState:
                 "new_balance": player.cash,
             },
         )
+
+        # Track to prevent mortgage/unmortgage loops
+        self._unmortgaged_this_turn.add(property_position)
 
         return True
 
@@ -1283,6 +1294,10 @@ class GameState:
         current.consecutive_doubles = 0
         self.pending_dice_roll = True
         self.last_dice_roll = None
+
+        # Reset mortgage/unmortgage tracking for next turn
+        self._mortgaged_this_turn.clear()
+        self._unmortgaged_this_turn.clear()
 
         # Advance to next non-bankrupt player
         player_ids = sorted(self.players.keys())

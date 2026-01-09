@@ -168,20 +168,22 @@ def _get_property_management_actions(game_state: GameState, player_id: int) -> L
             if space and game_state._can_sell_evenly(position, space.color_group):
                 actions.append(Action(ActionType.SELL_BUILDING, position=position))
 
-        # Mortgaging
+        # Mortgaging - but not if it was just unmortgaged this turn (prevents loops)
         if ownership.houses == 0 and not ownership.is_mortgaged:
-            actions.append(Action(ActionType.MORTGAGE_PROPERTY, position=position))
+            if position not in game_state._unmortgaged_this_turn:
+                actions.append(Action(ActionType.MORTGAGE_PROPERTY, position=position))
 
-        # Unmortgaging
+        # Unmortgaging - but not if it was just mortgaged this turn (prevents loops)
         if ownership.is_mortgaged:
-            space = game_state.board.get_space(position)
-            mortgage_value = 0
-            if hasattr(space, "mortgage_value"):
-                mortgage_value = space.mortgage_value
-            cost = int(mortgage_value * (1 + game_state.config.mortgage_interest_rate))
+            if position not in game_state._mortgaged_this_turn:
+                space = game_state.board.get_space(position)
+                mortgage_value = 0
+                if hasattr(space, "mortgage_value"):
+                    mortgage_value = space.mortgage_value
+                cost = int(mortgage_value * (1 + game_state.config.mortgage_interest_rate))
 
-            if player.cash >= cost:
-                actions.append(Action(ActionType.UNMORTGAGE_PROPERTY, position=position))
+                if player.cash >= cost:
+                    actions.append(Action(ActionType.UNMORTGAGE_PROPERTY, position=position))
 
     return actions
 
