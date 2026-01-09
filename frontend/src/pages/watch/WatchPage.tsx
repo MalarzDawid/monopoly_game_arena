@@ -11,10 +11,9 @@ import {
 } from '@/components/ui/select'
 import {
   MonopolyBoardSvg,
-  EventFeed,
   PlayerCards,
   GameControls,
-  LlmDecisionFeed,
+  UnifiedActivityFeed,
   NetWorthOverTimeChart,
   AssetAllocationChart,
   RentHeatmap,
@@ -409,18 +408,15 @@ export function WatchPage() {
 
           {/* Feeds and Charts Column */}
           <div className="space-y-4">
-            <EventFeed
+            <UnifiedActivityFeed
               events={displayEvents}
-              players={displaySnapshot.players}
-              loading={eventsLoading}
-            />
-            <LlmDecisionFeed
               decisions={llmDecisions}
               players={displaySnapshot.players}
-              loading={llmLoading}
+              roles={displayStatus.roles}
+              loading={eventsLoading || llmLoading}
             />
 
-            {/* Net Worth Over Time Chart - after LLM Decisions */}
+            {/* Net Worth Over Time Chart */}
             <NetWorthOverTimeChart
               data={netWorthHistory || []}
               players={displaySnapshot.players}

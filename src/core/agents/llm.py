@@ -399,7 +399,7 @@ class LLMAgent(Agent):
 No text before or after the JSON. No markdown code blocks.
 
 **Correct format example:**
-{{"action_type": "roll_dice", "params": {{}}, "rationale": "Starting my turn"}}
+{{"action_type": "roll_dice", "params": {{}}, "rationale": "Rolling dice to advance on the board. With $1200 cash and 3 properties, I'm in a strong early-game position. Looking to land on unowned properties to expand my portfolio before opponents secure monopolies."}}
 
 Respond now with the correct JSON:"""
 
@@ -520,7 +520,7 @@ Respond now with the correct JSON:"""
                 return None, "BID action requires 'amount' param"
             result_action.params["amount"] = int(params["amount"])
 
-        return result_action, rationale[:200]  # Truncate rationale
+        return result_action, rationale
 
     def _get_fallback_action(self, legal_actions: List[Action]) -> Action:
         """Get a safe fallback action when LLM fails."""

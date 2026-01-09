@@ -23,7 +23,10 @@ You MUST respond with ONLY a valid JSON object in this exact format:
 ## Rules
 1. You MUST choose an action from the provided legal_actions list
 2. The action_type MUST exactly match one from legal_actions
-3. Keep rationale under 100 characters
+3. Provide DETAILED rationale (2-4 sentences) explaining your strategic reasoning, including:
+   - Why this action fits your strategy
+   - Key factors you considered (cash, properties, opponents, game phase)
+   - Expected outcome or risk assessment
 4. Do NOT output anything except the JSON object
 5. Do NOT include markdown formatting or code blocks
 
