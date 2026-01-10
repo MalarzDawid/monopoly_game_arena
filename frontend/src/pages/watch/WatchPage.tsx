@@ -31,6 +31,7 @@ import {
   useRentByColorGroup,
   useAssetAllocation,
   useChangeStrategy,
+  useStrategyChanges,
 } from '@/hooks/useGameData'
 import { mockSnapshot, mockEvents } from '@/api/mocks'
 import { Plus, Gamepad2, AlertCircle } from 'lucide-react'
@@ -75,6 +76,9 @@ export function WatchPage() {
   )
   const { data: rentByColorGroup, isLoading: rentLoading } = useRentByColorGroup(gameId)
   const assetAllocation = useAssetAllocation(snapshot?.players)
+
+  // Extract strategy changes from LLM decisions for chart markers
+  const strategyChanges = useStrategyChanges(llmDecisions, netWorthHistory, snapshot?.players)
 
   // Game control mutations
   const { pause, resume, setSpeed } = useGameControl(gameId || '')
@@ -429,6 +433,7 @@ export function WatchPage() {
             <NetWorthOverTimeChart
               data={netWorthHistory || []}
               players={displaySnapshot.players}
+              strategyChanges={strategyChanges}
               loading={netWorthLoading}
             />
           </div>

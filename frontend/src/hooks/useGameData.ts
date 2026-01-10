@@ -377,6 +377,80 @@ export function useLlmDecisions(gameId: string | null, playerId?: number, limit:
   })
 }
 
+// Strategy change event type for chart markers
+export interface StrategyChangeEvent {
+  turn: number
+  playerId: number
+  playerName: string
+  fromStrategy: string
+  toStrategy: string
+  reasoning: string
+  netWorth: number
+}
+
+// Extract strategy changes from LLM decisions
+export function useStrategyChanges(
+  llmDecisions: LlmDecision[] | undefined,
+  netWorthHistory: import('../components/watch/NetWorthOverTimeChart').NetWorthDataPoint[] | undefined,
+  players: import('../types/game').Player[] | undefined
+): StrategyChangeEvent[] {
+  if (!llmDecisions || !netWorthHistory || !players) return []
+
+  const changes: StrategyChangeEvent[] = []
+
+  // Track each player's strategy to detect changes
+  const playerStrategies: Map<number, string> = new Map()
+
+  // Sort decisions by sequence to process in order
+  const sortedDecisions = [...llmDecisions].sort(
+    (a, b) => (a.sequence_number ?? 0) - (b.sequence_number ?? 0)
+  )
+
+  for (const decision of sortedDecisions) {
+    const playerId = decision.player_id
+    const currentStrategy = decision.strategy_description?.toLowerCase() || 'balanced'
+    const previousStrategy = playerStrategies.get(playerId)
+    const reasoning = decision.reasoning || ''
+
+    // Check if this is a strategy change (reasoning starts with STRATEGY CHANGE or strategy differs)
+    const isStrategyChangeInReasoning = reasoning.toUpperCase().includes('STRATEGY CHANGE')
+    const strategyDiffers = previousStrategy && previousStrategy !== currentStrategy
+
+    if (isStrategyChangeInReasoning || strategyDiffers) {
+      // Find net worth at this turn
+      const turnData = netWorthHistory.find((d) => d.turn === decision.turn_number)
+      const playerNetWorth = turnData?.players.find((p) => p.playerId === playerId)?.netWorth ?? 0
+      const player = players.find((p) => p.player_id === playerId)
+
+      // Parse from/to from reasoning if possible, otherwise use tracked values
+      let fromStrategy = previousStrategy || 'unknown'
+      let toStrategy = currentStrategy
+
+      // Try to extract from reasoning (e.g., "balanced -> aggressive")
+      const arrowMatch = reasoning.match(/(\w+)\s*[-→>]+\s*(\w+)/i)
+      if (arrowMatch) {
+        fromStrategy = arrowMatch[1].toLowerCase()
+        toStrategy = arrowMatch[2].toLowerCase()
+      }
+
+      changes.push({
+        turn: decision.turn_number,
+        playerId,
+        playerName: player?.name || `Player ${playerId}`,
+        fromStrategy,
+        toStrategy,
+        reasoning,
+        netWorth: playerNetWorth,
+      })
+    }
+
+    // Update tracked strategy
+    playerStrategies.set(playerId, currentStrategy)
+  }
+
+  return changes
+}
+
 // Property values for net worth calculation
 const PROPERTY_BASE_VALUES: Record<number, number> = {
   1: 60, 3: 60, // Brown
