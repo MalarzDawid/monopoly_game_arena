@@ -5,15 +5,26 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .registry import GameRegistry
-from snapshot import serialize_snapshot
-from server.database import init_db, close_db, get_session, GameRepository
+from server.registry import GameRegistry
+from server.dashboard_api import router as dashboard_router
+from core.serialization import serialize_snapshot
+from core.exceptions import MonopolyError
+from data import init_db, close_db, get_session, GameRepository
+from services import GameService
+from server.schemas import (
+    GameEventDTO,
+    GameHistoryResponse,
+    GameListResponse,
+    GameStatsResponse,
+    GameSummary,
+    PlayerSummary,
+)
 
 
 @asynccontextmanager
@@ -39,7 +50,26 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan
 )
+app.include_router(dashboard_router)
 registry = GameRegistry()
+
+
+# ---- Dependencies ----
+async def get_repo(session: AsyncSession = Depends(get_session)) -> GameRepository:
+    return GameRepository(session)
+
+
+async def get_game_service(repo: GameRepository = Depends(get_repo)) -> GameService:
+    return GameService(repo)
+
+
+@app.exception_handler(MonopolyError)
+async def monopoly_exception_handler(request: Request, exc: MonopolyError):
+    """Handle domain-specific errors in a consistent JSON format."""
+    return JSONResponse(
+        status_code=400,
+        content={"error": exc.__class__.__name__, "message": str(exc)},
+    )
 
 
 class CreateGameRequest(BaseModel):
@@ -50,6 +80,7 @@ class CreateGameRequest(BaseModel):
     max_turns: Optional[int] = Field(default=100, ge=1)
     tick_ms: Optional[int] = Field(default=500, ge=0, le=10000)
     llm_strategy: str = Field("balanced", pattern=r"^(aggressive|balanced|defensive)$")
+    llm_strategies: Optional[list[str]] = None  # Per-player LLM strategies
 
 
 class CreateGameResponse(BaseModel):
@@ -66,6 +97,7 @@ async def create_game(req: CreateGameRequest):
         roles=req.roles,
         tick_ms=req.tick_ms,
         llm_strategy=req.llm_strategy,
+        llm_strategies=req.llm_strategies,
     )
     return CreateGameResponse(game_id=gid)
 
@@ -213,6 +245,39 @@ async def resume_game(game_id: str):
     return {"game_id": game_id, "paused": False}
 
 
+class StrategyChangeRequest(BaseModel):
+    player_id: int
+    strategy: str = Field(pattern=r"^(aggressive|balanced|defensive)$")
+
+
+class StrategyChangeResponse(BaseModel):
+    success: bool
+    player_id: int
+    old_strategy: str | None
+    new_strategy: str
+    message: str | None = None
+
+
+@app.post("/games/{game_id}/strategy", response_model=StrategyChangeResponse)
+async def change_player_strategy(game_id: str, req: StrategyChangeRequest):
+    """Change an LLM player's strategy during the game."""
+    runner = await registry.get(game_id)
+    if not runner:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    success, old_strategy, message = await runner.change_player_strategy(
+        req.player_id, req.strategy
+    )
+
+    return StrategyChangeResponse(
+        success=success,
+        player_id=req.player_id,
+        old_strategy=old_strategy,
+        new_strategy=req.strategy if success else (old_strategy or "unknown"),
+        message=message,
+    )
+
+
 @app.get("/games/{game_id}/turns")
 async def list_turns(game_id: str):
     runner = await registry.get(game_id)
@@ -232,118 +297,118 @@ async def get_turn_events(game_id: str, turn_number: int):
 
 # ---- Database History Endpoints ----
 
-@app.get("/api/games")
+@app.get("/api/games", response_model=GameListResponse)
 async def list_all_games(
     limit: int = 100,
     offset: int = 0,
     status: Optional[str] = None,
-    session: AsyncSession = Depends(get_session)
+    service: GameService = Depends(get_game_service),
 ):
     """List all games from database."""
-    repo = GameRepository(session)
-    games = await repo.list_games(limit=limit, offset=offset, status=status)
+    games = await service.list_games(limit=limit, offset=offset, status=status)
 
-    return {
-        "games": [
-            {
-                "game_id": g.game_id,
-                "status": g.status,
-                "total_turns": g.total_turns,
-                "created_at": g.created_at.isoformat() if g.created_at else None,
-                "started_at": g.started_at.isoformat() if g.started_at else None,
-                "finished_at": g.finished_at.isoformat() if g.finished_at else None,
-                "winner_id": g.winner_id,
-                "config": g.config,
-                "players": [
-                    {
-                        "player_id": p.player_id,
-                        "name": p.name,
-                        "agent_type": p.agent_type,
-                        "is_winner": p.is_winner,
-                        "final_cash": p.final_cash,
-                        "final_net_worth": p.final_net_worth,
-                    }
+    return GameListResponse(
+        games=[
+            GameSummary(
+                game_id=g.game_id,
+                status=g.status,
+                total_turns=g.total_turns,
+                created_at=g.created_at,
+                started_at=g.started_at,
+                finished_at=g.finished_at,
+                winner_id=g.winner_id,
+                config=g.config,
+                players=[
+                    PlayerSummary(
+                        player_id=p.player_id,
+                        name=p.name,
+                        agent_type=p.agent_type,
+                        is_winner=p.is_winner,
+                        final_cash=p.final_cash,
+                        final_net_worth=p.final_net_worth,
+                    )
                     for p in g.players
-                ]
-            }
+                ],
+            )
             for g in games
         ],
-        "limit": limit,
-        "offset": offset,
-    }
+        limit=limit,
+        offset=offset,
+    )
 
 
-@app.get("/api/games/{game_id}/history")
+@app.get("/api/games/{game_id}/history", response_model=GameHistoryResponse)
 async def get_game_history(
     game_id: str,
-    session: AsyncSession = Depends(get_session)
+    service: GameService = Depends(get_game_service),
 ):
     """Get full game history with all events from database."""
-    repo = GameRepository(session)
-    result = await repo.get_game_with_events(game_id)
+    result = await service.get_game_with_events(game_id)
 
     if not result:
         raise HTTPException(status_code=404, detail="Game not found in database")
 
     game, events = result
 
-    return {
-        "game": {
-            "game_id": game.game_id,
-            "status": game.status,
-            "total_turns": game.total_turns,
-            "created_at": game.created_at.isoformat() if game.created_at else None,
-            "started_at": game.started_at.isoformat() if game.started_at else None,
-            "finished_at": game.finished_at.isoformat() if game.finished_at else None,
-            "winner_id": game.winner_id,
-            "config": game.config,
-            "players": [
-                {
-                    "player_id": p.player_id,
-                    "name": p.name,
-                    "agent_type": p.agent_type,
-                    "is_winner": p.is_winner,
-                    "final_cash": p.final_cash,
-                    "final_net_worth": p.final_net_worth,
-                }
-                for p in game.players
-            ]
-        },
-        "events": [
-            {
-                "sequence_number": e.sequence_number,
-                "turn_number": e.turn_number,
-                "event_type": e.event_type,
-                "timestamp": e.timestamp.isoformat() if e.timestamp else None,
-                "payload": e.payload,
-                "actor_player_id": e.actor_player_id,
-            }
+    game_summary = GameSummary(
+        game_id=game.game_id,
+        status=game.status,
+        total_turns=game.total_turns,
+        created_at=game.created_at,
+        started_at=game.started_at,
+        finished_at=game.finished_at,
+        winner_id=game.winner_id,
+        config=game.config,
+        players=[
+            PlayerSummary(
+                player_id=p.player_id,
+                name=p.name,
+                agent_type=p.agent_type,
+                is_winner=p.is_winner,
+                final_cash=p.final_cash,
+                final_net_worth=p.final_net_worth,
+            )
+            for p in game.players
+        ],
+    )
+
+    return GameHistoryResponse(
+        game=game_summary,
+        events=[
+            GameEventDTO(
+                sequence_number=e.sequence_number,
+                turn_number=e.turn_number,
+                event_type=e.event_type,
+                timestamp=e.timestamp,
+                payload=e.payload,
+                actor_player_id=e.actor_player_id,
+            )
             for e in events
         ],
-        "total_events": len(events),
-    }
+        total_events=len(events),
+    )
 
 
-@app.get("/api/games/{game_id}/stats")
+@app.get("/api/games/{game_id}/stats", response_model=GameStatsResponse)
 async def get_game_stats(
     game_id: str,
-    session: AsyncSession = Depends(get_session)
+    service: GameService = Depends(get_game_service),
 ):
     """Get game statistics from database."""
-    repo = GameRepository(session)
+    repo = service.repo
     game = await repo.get_game_by_id(game_id)
 
     if not game:
         raise HTTPException(status_code=404, detail="Game not found in database")
 
-    stats = await repo.get_game_statistics(game.id)
+    stats = await service.get_game_stats(game.id)
 
-    return {
-        "game_id": game_id,
-        "status": game.status,
-        "total_turns": game.total_turns,
-        "statistics": stats,
-    }
+    return GameStatsResponse(
+        game_id=game_id,
+        status=game.status,
+        total_turns=game.total_turns,
+        statistics=stats,
+    )
 
 
 # ---- Static UI ----

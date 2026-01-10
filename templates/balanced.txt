@@ -17,3 +17,8 @@ Your goal is sustainable growth with risk management.
 - Prioritize completing monopolies over new colors
 - Decline expensive properties (>40% of cash) to trigger auctions
 - Late game (turn > 50): consider staying in jail if facing high rents
+
+### When to Change Strategy:
+- Switch to AGGRESSIVE if you secured a monopoly and have cash > $500 (time to capitalize!)
+- Switch to DEFENSIVE if cash drops below $150 or opponents have hotels
+- Stay balanced if game situation is uncertain or you're in mid-pack

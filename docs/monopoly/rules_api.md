@@ -5,7 +5,7 @@ High‑level API to query legal actions for a player and apply them safely.
 Example loop:
 
 ```python
-from monopoly.rules import get_legal_actions, apply_action
+from core.game.rules import get_legal_actions, apply_action
 
 pid = game.get_current_player().player_id
 legal = get_legal_actions(game, pid)
@@ -16,10 +16,10 @@ if legal:
 
 ### Reference
 
-::: monopoly.rules.Action
+::: core.game.rules.Action
 
-::: monopoly.rules.get_legal_actions
+::: core.game.rules.get_legal_actions
 
-::: monopoly.rules.apply_action
+::: core.game.rules.apply_action
 
-::: monopoly.rules.step_turn
+::: core.game.rules.step_turn

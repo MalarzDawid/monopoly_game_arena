@@ -6,15 +6,15 @@ import uuid
 from typing import Any, Dict, List, Optional, Set
 from datetime import datetime, timezone
 
-from monopoly.rules import get_legal_actions, apply_action
-from monopoly.game import GameState
-from game_logger import GameLogger
-from events.mapper import map_events
-from snapshot import serialize_snapshot
-from server.database import session_scope, GameRepository
-
-from monopoly.game import ActionType
-from agents import GreedyAgent, RandomAgent, LLMAgent
+from core.game.game import ActionType, GameState
+from core.game.rules import apply_action, get_legal_actions
+from core.agents import GreedyAgent, LLMAgent, RandomAgent
+from core.logging import GameLogger
+from core.events import map_events
+from core.serialization import serialize_snapshot
+from data import GameRepository, session_scope
+from core.exceptions import MonopolyError, InvalidActionError, LLMError
+from services import GameService
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +28,26 @@ class GameRunner:
     - Broadcast mapped events to subscribed WebSocket clients
     """
 
-    def __init__(self, game_id: str, game: GameState, agent_type: str = "greedy", roles: Optional[List[str]] = None, tick_ms: Optional[int] = 500, llm_strategy: str = "balanced"):
+    def __init__(
+        self,
+        game_id: str,
+        game: GameState,
+        agents: List[Optional[object]],
+        agent_type: str = "greedy",
+        roles: Optional[List[str]] = None,
+        tick_ms: Optional[int] = 500,
+        llm_strategy: str = "balanced",
+        llm_strategies: Optional[List[str]] = None,
+        game_repo: Optional[GameRepository] = None,
+        game_service: Optional[GameService] = None,
+    ):
         self.game_id = game_id
         self.game = game
         self.agent_type = agent_type
         self.llm_strategy = llm_strategy
-        self.logger = GameLogger(game_id=game_id)  # Pass game_id for DB logging
+        self.llm_strategies = llm_strategies
+        # DB persistence handled via GameService; logger only writes JSONL
+        self.logger = GameLogger(game_id=None)
         self._task: Optional[asyncio.Task] = None
         self._stop = asyncio.Event()
         self._clients: Set[asyncio.Queue] = set()  # each client gets a queue of outbound messages
@@ -51,6 +65,8 @@ class GameRunner:
 
         # Queue for pending LLM decisions to be saved to database
         self._pending_llm_decisions: List[Dict[str, Any]] = []
+        self._game_repo = game_repo
+        self._game_service = game_service
 
         # Agents list (one per player)
         names = [self.game.players[i].name for i in sorted(self.game.players)]
@@ -62,6 +78,7 @@ class GameRunner:
         if len(roles) < len(names):
             roles = roles + [agent_type] * (len(names) - len(roles))
         self.roles: List[str] = roles
+        self.agents: List[Optional[object]] = agents if agents is not None else [None] * len(names)
 
         # Create LLM callback that queues decisions for DB persistence
         def llm_decision_callback(decision_data: Dict[str, Any]) -> None:
@@ -84,17 +101,44 @@ class GameRunner:
             # Queue for database persistence
             self._pending_llm_decisions.append(decision_data)
 
-        # Prepare agents for non-human players
-        self.agents: List[Optional[object]] = [None] * len(names)
-        for i, role in enumerate(self.roles):
-            if role == "human":
-                self.agents[i] = None
-            elif role == "random":
-                self.agents[i] = RandomAgent(i, names[i])
-            elif role == "llm":
-                self.agents[i] = LLMAgent(i, names[i], strategy=self.llm_strategy, decision_callback=llm_decision_callback)
-            else:
-                self.agents[i] = GreedyAgent(i, names[i])
+        # Callback for when LLM changes its own strategy
+        def on_strategy_change(player_id: int, old_strategy: str, new_strategy: str) -> None:
+            # Update llm_strategies list so status endpoint reflects the change
+            if self.llm_strategies and player_id < len(self.llm_strategies):
+                self.llm_strategies[player_id] = new_strategy
+            logger.info(
+                f"LLM Player {player_id} self-changed strategy: {old_strategy} -> {new_strategy}"
+            )
+
+        # Prepare agents for non-human players if not provided
+        if agents is None:
+            for i, role in enumerate(self.roles):
+                if role == "human":
+                    self.agents[i] = None
+                elif role == "random":
+                    self.agents[i] = RandomAgent(i, names[i])
+                elif role == "llm":
+                    # Use per-player strategy if available, otherwise fallback to global
+                    strategy = (
+                        self.llm_strategies[i]
+                        if self.llm_strategies and i < len(self.llm_strategies) and self.llm_strategies[i]
+                        else self.llm_strategy
+                    )
+                    self.agents[i] = LLMAgent(
+                        i,
+                        names[i],
+                        strategy=strategy,
+                        decision_callback=llm_decision_callback,
+                        on_strategy_change=on_strategy_change,
+                    )
+                else:
+                    self.agents[i] = GreedyAgent(i, names[i])
+
+        # Ensure all LLMAgents (even pre-built ones) have callbacks wired
+        for agent in self.agents:
+            if isinstance(agent, LLMAgent):
+                agent.decision_callback = llm_decision_callback
+                agent.on_strategy_change = on_strategy_change
 
     async def start(self) -> None:
         # Flush initial GAME_START and TURN_START
@@ -103,16 +147,21 @@ class GameRunner:
         try:
             async with session_scope() as session:
                 repo = GameRepository(session)
+                service = GameService(repo)
                 # Fetch game to get UUID for LLM decision logging
                 db_game = await repo.get_game_by_id(self.game_id)
                 if db_game:
                     self._game_uuid = db_game.id
                     logger.info(f"Game {self.game_id} has UUID {self._game_uuid}")
-                await repo.update_game_status(
+                # Update status via service (which wraps repository)
+                await service.update_status(
                     game_id=self.game_id,
                     status="running",
                     started_at=datetime.now(timezone.utc),
                 )
+        except MonopolyError as e:
+            # Domain-level error during startup; log and continue best-effort.
+            logger.warning("Domain error while starting game %s: %s", self.game_id, e)
         except Exception as e:
             # Non-fatal; continue even if DB update fails
             logger.warning(f"Failed to fetch game UUID or update status: {e}")
@@ -197,7 +246,15 @@ class GameRunner:
                         await asyncio.sleep(self._tick)
                         continue
                     agent = self.agents[bidder_id]
-                    action = agent.choose_action(self.game, actions)
+                    try:
+                        action = agent.choose_action(self.game, actions)
+                    except LLMError as e:
+                        logger.warning("LLM agent error during auction for player %s: %s", bidder_id, e)
+                        # Fallback: pass bidder's turn in auction
+                        self.game.active_auction.pass_turn(bidder_id)
+                        await self.flush_and_broadcast()
+                        await asyncio.sleep(self._tick)
+                        continue
                     if action is None:
                         self.game.active_auction.pass_turn(bidder_id)
                         await self.flush_and_broadcast()
@@ -228,7 +285,14 @@ class GameRunner:
                 continue
             else:
                 agent = self.agents[current.player_id]
-                action = agent.choose_action(self.game, actions)
+                try:
+                    action = agent.choose_action(self.game, actions)
+                except LLMError as e:
+                    logger.warning("LLM agent error for player %s: %s", current.player_id, e)
+                    # Treat as no decision; end turn to keep game moving
+                    self.game.end_turn()
+                    await asyncio.sleep(self._tick)
+                    continue
                 if action is None:
                     self.game.end_turn()
                     await asyncio.sleep(self._tick)
@@ -239,18 +303,16 @@ class GameRunner:
         # Final flush and broadcast end state
         await self.flush_and_broadcast()
 
-        # Ensure all events are persisted to database before updating status
-        await self.logger.flush_to_db()
-
         # Update final status and results in DB (best-effort)
         try:
             async with session_scope() as session:
-                repo = GameRepository(session)
+                repo = self._game_repo or GameRepository(session)
+                service = GameService(repo)
                 db_game = await repo.get_game_by_id(self.game_id)
                 if db_game:
                     # Update game status and metadata
                     status = "finished" if self.game.game_over else "stopped"
-                    await repo.update_game_status(
+                    await service.update_status(
                         game_id=self.game_id,
                         status=status,
                         finished_at=datetime.now(timezone.utc),
@@ -291,15 +353,14 @@ class GameRunner:
     async def flush_and_broadcast(self) -> None:
         # Broadcast mapped events generated since last flush
         evs = self.game.event_log.events
+        start_index = self._last_engine_idx
+        mapped: List[Dict[str, Any]] = []
         if self._last_engine_idx < len(evs):
             slice_ = evs[self._last_engine_idx:]
             # Record turn start indices for querying per turn later
-            try:
-                from monopoly_game_arena.monopoly.money import EventType as _ET
-            except Exception:
-                _ET = None
+            from src.core.game.money import EventType as _ET
             for i, ev in enumerate(slice_):
-                if _ET and ev.event_type == _ET.TURN_START:
+                if ev.event_type == _ET.TURN_START:
                     # Extract turn number from details
                     d = ev.details.get("details", ev.details)
                     t = d.get("turn") if "turn" in d else d.get("turn_number")
@@ -324,7 +385,29 @@ class GameRunner:
         self.logger.flush_engine_events(self.game)
 
         # Persist pending events to database
-        await self.logger.flush_to_db()
+        if mapped and self._game_uuid:
+            try:
+                async with session_scope() as session:
+                    repo = GameRepository(session)
+                    service = GameService(repo)
+                    batch = []
+                    for idx, e in enumerate(mapped):
+                        seq = start_index + idx
+                        turn_num = e.get("turn_number", self.game.turn_number)
+                        payload = {k: v for k, v in e.items() if k not in {"event_type", "seq"}}
+                        batch.append(
+                            {
+                                "sequence_number": seq,
+                                "turn_number": turn_num,
+                                "event_type": e["event_type"],
+                                "payload": payload,
+                                "actor_player_id": e.get("player_id"),
+                            }
+                        )
+                    if batch:
+                        await service.persist_events(self._game_uuid, batch)
+            except Exception as e:
+                logger.warning(f"Failed to persist events to DB: {e}")
 
         # Persist pending LLM decisions to database
         await self._flush_llm_decisions()
@@ -340,23 +423,8 @@ class GameRunner:
         try:
             async with session_scope() as session:
                 repo = GameRepository(session)
-                for decision_data in decisions_to_save:
-                    await repo.add_llm_decision(
-                        game_uuid=self._game_uuid,
-                        player_id=decision_data["player_id"],
-                        turn_number=decision_data["turn_number"],
-                        sequence_number=decision_data["sequence_number"],
-                        game_state=decision_data["game_state"],
-                        player_state=decision_data["player_state"],
-                        available_actions=decision_data["available_actions"],
-                        prompt=decision_data["prompt"],
-                        reasoning=decision_data["reasoning"] or "",
-                        chosen_action=decision_data["chosen_action"],
-                        strategy_description=decision_data.get("strategy"),
-                        processing_time_ms=decision_data.get("processing_time_ms"),
-                        model_version=decision_data.get("model_version"),
-                    )
-                logger.debug(f"Saved {len(decisions_to_save)} LLM decisions to database")
+                service = GameService(repo)
+                await service.persist_llm_decisions(self._game_uuid, decisions_to_save)
         except Exception as e:
             logger.error(f"Failed to save LLM decisions to database: {e}")
             # Re-queue failed decisions for retry
@@ -380,7 +448,7 @@ class GameRunner:
 
     async def apply_action_request(self, action_type: str, params: dict | None = None, player_id: Optional[int] = None) -> tuple[bool, str]:
         """Try to apply an action for a player. Returns (accepted, reason)."""
-        from monopoly.rules import Action  # local import to avoid cycles
+        from src.core.game.rules import Action  # local import to avoid cycles
 
         async with self._apply_lock:
             pid = player_id if player_id is not None else self.game.get_current_player().player_id
@@ -420,6 +488,7 @@ class GameRunner:
             "phase": phase,
             "actors": actors,
             "roles": self.roles,
+            "llm_strategies": self.llm_strategies,
             "game_over": self.game.game_over,
             "paused": self._paused,
             "tick_ms": int(self._tick * 1000),
@@ -434,6 +503,44 @@ class GameRunner:
         self._tick = max(0.0, (tick_ms or 0) / 1000.0)
         # Nudge loop so speed applies immediately
         self._new_action_event.set()
+
+    async def change_player_strategy(
+        self, player_id: int, new_strategy: str
+    ) -> tuple[bool, str | None, str | None]:
+        """
+        Change an LLM player's strategy.
+
+        Args:
+            player_id: The player ID to change
+            new_strategy: New strategy (aggressive, balanced, defensive)
+
+        Returns:
+            Tuple of (success, old_strategy, error_message)
+        """
+        if player_id < 0 or player_id >= len(self.agents):
+            return False, None, f"Invalid player_id: {player_id}"
+
+        agent = self.agents[player_id]
+
+        if agent is None:
+            return False, None, f"Player {player_id} is a human player"
+
+        if not isinstance(agent, LLMAgent):
+            return False, None, f"Player {player_id} is not an LLM agent (type: {type(agent).__name__})"
+
+        old_strategy = agent.strategy
+        success = agent.change_strategy(new_strategy)
+
+        if success:
+            # Also update the llm_strategies list for status reporting
+            if self.llm_strategies and player_id < len(self.llm_strategies):
+                self.llm_strategies[player_id] = new_strategy
+            logger.info(
+                f"Player {player_id} strategy changed: {old_strategy} -> {new_strategy}"
+            )
+            return True, old_strategy, None
+        else:
+            return False, old_strategy, f"Invalid strategy: {new_strategy}"
 
     async def list_turns(self) -> List[Dict[str, int]]:
         # Build ranges from recorded indices

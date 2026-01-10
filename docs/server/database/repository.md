@@ -5,7 +5,7 @@ Repository pattern encapsulating all database operations with async/await.
 ### Usage
 
 ```python
-from server.database import session_scope, GameRepository
+from data import session_scope, GameRepository
 
 async with session_scope() as session:
     repo = GameRepository(session)
@@ -170,4 +170,4 @@ await repo.update_llm_player_strategy(
 
 ### Reference
 
-::: server.database.repository.GameRepository
+::: data.repository.GameRepository

@@ -7,7 +7,7 @@ SQLAlchemy ORM models for game persistence with event sourcing.
 Tracks game session metadata:
 
 ```python
-from server.database.models import Game
+from data.models import Game
 
 # Fields
 game.id           # UUID primary key
@@ -32,7 +32,7 @@ game.llm_decisions  # List of LLMDecision objects (lazy loaded)
 Per‑player information for each game:
 
 ```python
-from server.database.models import Player
+from data.models import Player
 
 # Core fields
 player.id           # UUID primary key
@@ -60,7 +60,7 @@ player.llm_learning_data   # JSONB accumulated learning
 Immutable event log for event sourcing:
 
 ```python
-from server.database.models import GameEvent
+from data.models import GameEvent
 
 # Fields
 event.id              # UUID primary key
@@ -95,7 +95,7 @@ Common event types:
 Records LLM agent decision context and reasoning:
 
 ```python
-from server.database.models import LLMDecision
+from data.models import LLMDecision
 
 # Identifiers
 decision.id               # UUID primary key
@@ -143,10 +143,10 @@ Key indexes for query performance:
 
 ### Reference
 
-::: server.database.models.Game
+::: data.models.Game
 
-::: server.database.models.Player
+::: data.models.Player
 
-::: server.database.models.GameEvent
+::: data.models.GameEvent
 
-::: server.database.models.LLMDecision
+::: data.models.LLMDecision

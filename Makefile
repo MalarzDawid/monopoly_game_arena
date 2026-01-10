@@ -1,4 +1,4 @@
-.PHONY: help install dev server db-up db-down db-migrate db-create-migration db-reset db-test db-stats db-clear test clean lint format batch batch-llm batch-multi dashboard
+.PHONY: help install dev server db-up db-down db-migrate db-create-migration db-reset db-test db-stats db-clear test clean lint format batch batch-llm batch-multi dashboard analyze
 
 # Default target
 .DEFAULT_GOAL := help
@@ -12,7 +12,8 @@ NC := \033[0m # No Color
 
 # Project paths
 PROJECT_DIR := $(shell pwd)
-export PYTHONPATH := $(PROJECT_DIR):$(PYTHONPATH)
+export PYTHONPATH := $(PROJECT_DIR)/src:$(PROJECT_DIR):$(PYTHONPATH)
+ALEMBIC := PYTHONPATH=$(PROJECT_DIR)/src UV_CACHE_DIR=.uv-cache uv run alembic
 
 help: ## Show this help message
 	@echo "$(BLUE)Monopoly Game Arena - Makefile Commands$(NC)"
@@ -61,7 +62,20 @@ dashboard: ## Start analytics dashboard (http://localhost:8050)
 
 dashboard-dev: ## Start dashboard in development mode with debug
 	@echo "$(BLUE)📊 Starting Dashboard (dev mode)...$(NC)"
-	uv run python dashboard/app.py
+	uv run python -m dashboard.app
+
+# ============================================================================
+# Analysis / Tools
+# ============================================================================
+
+analyze: ## Analyze a saved game JSONL file (usage: make analyze FILE=path/to/game.jsonl)
+	@if [ -z "$(FILE)" ]; then \
+		echo "$(RED)❌ Error: FILE is required$(NC)"; \
+		echo "$(YELLOW)Usage: make analyze FILE=path/to/game.jsonl$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)📊 Analyzing game from $(FILE)...$(NC)"
+	uv run python scripts/analyze_game.py $(FILE)
 
 # ============================================================================
 # Database
@@ -86,7 +100,7 @@ db-psql: ## Connect to PostgreSQL CLI
 
 db-migrate: ## Apply database migrations (alembic upgrade head)
 	@echo "$(BLUE)🔄 Applying migrations...$(NC)"
-	uv run alembic upgrade head
+	$(ALEMBIC) upgrade head
 	@echo "$(GREEN)✅ Migrations applied$(NC)"
 
 db-create-migration: ## Create new migration (usage: make db-create-migration MSG="your message")
@@ -96,21 +110,21 @@ db-create-migration: ## Create new migration (usage: make db-create-migration MS
 		exit 1; \
 	fi
 	@echo "$(BLUE)📝 Creating migration: $(MSG)$(NC)"
-	uv run alembic revision --autogenerate -m "$(MSG)"
+	$(ALEMBIC) revision --autogenerate -m "$(MSG)"
 	@echo "$(GREEN)✅ Migration created$(NC)"
 
 db-downgrade: ## Rollback last migration
 	@echo "$(BLUE)⏪ Rolling back migration...$(NC)"
-	uv run alembic downgrade -1
+	$(ALEMBIC) downgrade -1
 	@echo "$(GREEN)✅ Migration rolled back$(NC)"
 
 db-current: ## Show current migration version
 	@echo "$(BLUE)📊 Current migration version:$(NC)"
-	uv run alembic current
+	$(ALEMBIC) current
 
 db-history: ## Show migration history
 	@echo "$(BLUE)📜 Migration history:$(NC)"
-	uv run alembic history --verbose
+	$(ALEMBIC) history --verbose
 
 db-init: ## Initialize database (create tables)
 	@echo "$(BLUE)🔧 Initializing database...$(NC)"
@@ -202,7 +216,7 @@ type-check: ## Run type checking with mypy
 
 play: ## Run CLI game simulation
 	@echo "$(BLUE)🎲 Starting Monopoly game...$(NC)"
-	uv run python play_monopoly.py
+	uv run python scripts/play_monopoly.py
 
 play-seed: ## Run game with specific seed (usage: make play-seed SEED=42)
 	@if [ -z "$(SEED)" ]; then \
@@ -211,7 +225,7 @@ play-seed: ## Run game with specific seed (usage: make play-seed SEED=42)
 		exit 1; \
 	fi
 	@echo "$(BLUE)🎲 Starting game with seed $(SEED)...$(NC)"
-	uv run python play_monopoly.py --seed $(SEED)
+	uv run python scripts/play_monopoly.py --seed $(SEED)
 
 batch: ## Run batch games (usage: make batch GAMES=10 AGENT=greedy)
 	@echo "$(BLUE)🎲 Running batch games...$(NC)"
@@ -287,7 +301,7 @@ status: ## Show status of all services
 	@docker-compose ps 2>/dev/null || echo "  Not running"
 	@echo ""
 	@echo "$(YELLOW)Database Migration:$(NC)"
-	@uv run alembic current 2>/dev/null || echo "  Not initialized"
+	@$(ALEMBIC) current 2>/dev/null || echo "  Not initialized"
 	@echo ""
 
 # ============================================================================
@@ -322,7 +336,7 @@ check: lint format-check type-check test ## Run all checks (lint, format, type, 
 
 check-imports: ## Quick check if Python imports work
 	@echo "$(BLUE)🔍 Checking imports...$(NC)"
-	@uv run python -c "from server.database import Game, Player, GameEvent; print('✅ Database models OK')"
+	@uv run python -c "from src.data import Game, Player, GameEvent; print('✅ Database models OK')"
 	@uv run python -c "from server.app import app; print('✅ FastAPI app OK')"
 	@echo "$(GREEN)✅ All imports working!$(NC)"
 

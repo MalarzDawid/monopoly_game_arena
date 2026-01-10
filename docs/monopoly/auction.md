@@ -35,8 +35,8 @@ The initiator's automatic 10% bid ensures that:
 ### Auction Class
 
 ```python
-from monopoly.auction import Auction
-from monopoly.money import EventLog
+from core.game.auction import Auction
+from core.game.money import EventLog
 
 event_log = EventLog()
 auction = Auction(
@@ -85,8 +85,8 @@ auction = game_state.start_auction(
 Or via the rules API when handling `DECLINE_PURCHASE`:
 
 ```python
-from monopoly.rules import apply_action
-from monopoly.game import ActionType
+from core.game.rules import apply_action, Action
+from core.game.game import ActionType
 
 action = Action(ActionType.DECLINE_PURCHASE, position=1)
 apply_action(game_state, action)  # Starts auction with current player as initiator
@@ -158,4 +158,4 @@ if auction.is_complete:
 
 ### Reference
 
-::: monopoly.auction.Auction
+::: core.game.auction.Auction

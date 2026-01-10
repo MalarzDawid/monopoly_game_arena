@@ -18,3 +18,8 @@ Your goal is survival and steady income with high cash reserves.
 - Prioritize railroads and utilities for steady income
 - Late game: prefer staying in jail (don't pay fine unless forced)
 - PASS_AUCTION if bid would leave you with < $300
+
+### When to Change Strategy:
+- Switch to AGGRESSIVE if you have monopoly + cash > $600 (you're safe enough to attack!)
+- Switch to BALANCED if cash recovered to $400+ and you see opportunities
+- Stay defensive if opponents have developed properties or your cash is unstable

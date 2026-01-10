@@ -1,6 +1,21 @@
 version: '3.8'
 
 services:
+  app:
+    build: .
+    container_name: monopoly_app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://monopoly_user:monopoly_pass@postgres:5432/monopoly_arena
+      - DATABASE_URL_SYNC=postgresql://monopoly_user:monopoly_pass@postgres:5432/monopoly_arena
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - monopoly_network
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
     container_name: monopoly_postgres

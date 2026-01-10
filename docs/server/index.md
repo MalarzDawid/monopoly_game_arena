@@ -108,4 +108,4 @@ sequenceDiagram
 | `server/app.py` | FastAPI routes and WebSocket endpoints |
 | `server/registry.py` | In‑memory game session management |
 | `server/runner.py` | Game loop orchestration and event broadcasting |
-| `server/database/` | PostgreSQL models, repository, sessions |
+| `src/data/` | PostgreSQL models, repository, sessions |

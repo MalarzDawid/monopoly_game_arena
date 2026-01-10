@@ -131,7 +131,7 @@ erDiagram
 All database operations use async/await:
 
 ```python
-from server.database import session_scope, GameRepository
+from data import session_scope, GameRepository
 
 async with session_scope() as session:
     repo = GameRepository(session)

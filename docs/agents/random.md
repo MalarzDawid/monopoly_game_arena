@@ -33,8 +33,8 @@ flowchart TD
 ### Usage
 
 ```python
-from agents import RandomAgent
-from monopoly.rules import get_legal_actions, apply_action
+from src.core.agents import RandomAgent
+from src.core.game.rules import get_legal_actions, apply_action
 
 agent = RandomAgent(player_id=0, name="Alice")
 
@@ -82,4 +82,4 @@ else:
 
 ### Reference
 
-::: agents.random.RandomAgent
+::: core.agents.random.RandomAgent
